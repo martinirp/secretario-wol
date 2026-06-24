@@ -90,8 +90,7 @@ async function connectToWhatsApp () {
     
     const sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'silent' }),
-        browser: ['LigarPC', 'Chrome', '1.0.0']
+        logger: pino({ level: 'silent' })
     });
 
     sock.ev.on('connection.update', (update) => {
