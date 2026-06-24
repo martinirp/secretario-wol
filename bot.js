@@ -10,6 +10,8 @@ require('dotenv').config();
 // IP de broadcast padrão para WoL
 const BROADCAST_ADDRESS = process.env.BROADCAST_ADDRESS || '255.255.255.255';
 
+let isRequestingCode = false;
+
 // Função auxiliar para fazer perguntas no console
 function askQuestion(query) {
     const rl = readline.createInterface({
@@ -104,17 +106,21 @@ async function connectToWhatsApp () {
 
     // Código de Pareamento (Contorna o erro 405 do QR Code)
     if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(BOT_NUMBER);
-                console.log(`\n======================================================`);
-                console.log(`📲 CÓDIGO DE PAREAMENTO: ${code}`);
-                console.log(`No seu celular do Bot, vá em: Aparelhos Conectados > Conectar usando número de telefone`);
-                console.log(`======================================================\n`);
-            } catch (err) {
-                console.error('Erro ao gerar código de pareamento:', err);
-            }
-        }, 3000);
+        if (!isRequestingCode) {
+            isRequestingCode = true;
+            setTimeout(async () => {
+                try {
+                    const code = await sock.requestPairingCode(BOT_NUMBER);
+                    console.log(`\n======================================================`);
+                    console.log(`📲 CÓDIGO DE PAREAMENTO: ${code}`);
+                    console.log(`No seu celular do Bot, vá em: Aparelhos Conectados > Conectar usando número de telefone`);
+                    console.log(`======================================================\n`);
+                } catch (err) {
+                    console.error('Erro ao gerar código de pareamento:', err);
+                    isRequestingCode = false;
+                }
+            }, 3000);
+        }
     }
 
     sock.ev.on('connection.update', (update) => {
@@ -123,14 +129,23 @@ async function connectToWhatsApp () {
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar... ${shouldReconnect}`);
+            console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar...`);
+            
             if (shouldReconnect) {
-                // Aguarda 3 segundos antes de tentar reconectar
-                setTimeout(connectToWhatsApp, 3000);
+                // Se a gente está esperando o código ser digitado, não vamos reiniciar o bot a cada 3s,
+                // vamos apenas esperar a biblioteca tentar recuperar a sessão sozinha ou dar um tempo bem maior.
+                if (isRequestingCode && !sock.authState.creds.registered) {
+                    console.log('Aguardando você digitar o código no celular...');
+                    setTimeout(connectToWhatsApp, 15000);
+                } else {
+                    setTimeout(connectToWhatsApp, 3000);
+                }
             } else {
                 console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys", apague a variável BOT_NUMBER do .env e rode novamente.');
+                isRequestingCode = false;
             }
         } else if (connection === 'open') {
+            isRequestingCode = false;
             console.log('\n[!] Secretário conectado e pronto!');
             console.log(`[!] O número autorizado a mandar comandos é: ${AUTHORIZED_NUMBER}`);
             console.log('[!] Aguardando mensagem "Ligar PC"...\n');
