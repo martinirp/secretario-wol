@@ -91,17 +91,27 @@ async function connectToWhatsApp () {
     const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: true 
+        browser: ['LigarPC', 'Chrome', '1.0.0']
     });
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
+        if (qr) {
+            // Gera o QR Code no terminal manualmente
+            qrcode.generate(qr, { small: true });
+            console.log('\n[!] Por favor, escaneie o QR Code acima com o seu celular!');
+        }
+
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Conexão fechada. Tentando reconectar...', shouldReconnect);
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar... ${shouldReconnect}`);
             if (shouldReconnect) {
-                connectToWhatsApp();
+                // Aguarda 3 segundos antes de tentar reconectar para não travar num loop infinito
+                setTimeout(connectToWhatsApp, 3000);
+            } else {
+                console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys" e rode novamente.');
             }
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
