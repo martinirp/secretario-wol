@@ -28,8 +28,9 @@ async function setupEnv() {
     let mac = process.env.MAC_ADDRESS;
     let authNum = process.env.AUTHORIZED_NUMBER;
     let ip = process.env.PC_IP;
+    let botNum = process.env.BOT_NUMBER;
 
-    if (!mac || !authNum || !ip) {
+    if (!mac || !authNum || !ip || !botNum) {
         console.log("\n=============================================");
         console.log("   PRIMEIRA EXECUÇÃO - CONFIGURAÇÃO INICIAL  ");
         console.log("=============================================\n");
@@ -41,10 +42,13 @@ async function setupEnv() {
             ip = await askQuestion("\n2. Digite o IP local do PC para sabermos quando ele ligar (Ex: 192.168.0.100):\n> ");
         }
         if (!authNum) {
-            authNum = await askQuestion("\n3. Digite o número do SEU WhatsApp (apenas números, com DDI 55 e DDD):\n> ");
+            authNum = await askQuestion("\n3. Digite o SEU número pessoal (que vai mandar os comandos, ex: 5511999999999):\n> ");
+        }
+        if (!botNum) {
+            botNum = await askQuestion("\n4. Digite o número do WhatsApp que está sendo usado como BOT (ex: 5511888888888):\n> ");
         }
         
-        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nAUTHORIZED_NUMBER=${authNum}\n`;
+        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nAUTHORIZED_NUMBER=${authNum}\nBOT_NUMBER=${botNum}\n`;
         fs.writeFileSync('.env', envContent);
         
         console.log("\n✅ Configurações salvas no arquivo '.env' com sucesso!");
@@ -53,6 +57,7 @@ async function setupEnv() {
         process.env.MAC_ADDRESS = mac;
         process.env.PC_IP = ip;
         process.env.AUTHORIZED_NUMBER = authNum;
+        process.env.BOT_NUMBER = botNum;
     }
 }
 
@@ -84,6 +89,7 @@ async function connectToWhatsApp () {
     const MAC_ADDRESS = process.env.MAC_ADDRESS;
     const PC_IP = process.env.PC_IP;
     const AUTHORIZED_NUMBER = process.env.AUTHORIZED_NUMBER;
+    const BOT_NUMBER = process.env.BOT_NUMBER;
 
     // 2. Inicia o Bot do WhatsApp
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -91,28 +97,38 @@ async function connectToWhatsApp () {
     const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: Browsers.macOS('Desktop'),
-        syncFullHistory: false
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        syncFullHistory: false,
+        printQRInTerminal: false
     });
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
+    // Código de Pareamento (Contorna o erro 405 do QR Code)
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(BOT_NUMBER);
+                console.log(`\n======================================================`);
+                console.log(`📲 CÓDIGO DE PAREAMENTO: ${code}`);
+                console.log(`No seu celular do Bot, vá em: Aparelhos Conectados > Conectar usando número de telefone`);
+                console.log(`======================================================\n`);
+            } catch (err) {
+                console.error('Erro ao gerar código de pareamento:', err);
+            }
+        }, 3000);
+    }
 
-        if (qr) {
-            // Gera o QR Code no terminal manualmente
-            qrcode.generate(qr, { small: true });
-            console.log('\n[!] Por favor, escaneie o QR Code acima com o seu celular!');
-        }
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar... ${shouldReconnect}`);
             if (shouldReconnect) {
-                // Aguarda 3 segundos antes de tentar reconectar para não travar num loop infinito
+                // Aguarda 3 segundos antes de tentar reconectar
                 setTimeout(connectToWhatsApp, 3000);
             } else {
-                console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys" e rode novamente.');
+                console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys", apague a variável BOT_NUMBER do .env e rode novamente.');
             }
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
