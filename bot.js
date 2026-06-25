@@ -10,8 +10,6 @@ require('dotenv').config();
 // IP de broadcast padrão para WoL
 const BROADCAST_ADDRESS = process.env.BROADCAST_ADDRESS || '255.255.255.255';
 
-let isRequestingCode = false;
-
 // Função auxiliar para fazer perguntas no console
 function askQuestion(query) {
     const rl = readline.createInterface({
@@ -30,9 +28,8 @@ async function setupEnv() {
     let mac = process.env.MAC_ADDRESS;
     let authNum = process.env.AUTHORIZED_NUMBER;
     let ip = process.env.PC_IP;
-    let botNum = process.env.BOT_NUMBER;
 
-    if (!mac || !authNum || !ip || !botNum) {
+    if (!mac || !authNum || !ip) {
         console.log("\n=============================================");
         console.log("   PRIMEIRA EXECUÇÃO - CONFIGURAÇÃO INICIAL  ");
         console.log("=============================================\n");
@@ -46,11 +43,8 @@ async function setupEnv() {
         if (!authNum) {
             authNum = await askQuestion("\n3. Digite o SEU número pessoal (que vai mandar os comandos, ex: 5511999999999):\n> ");
         }
-        if (!botNum) {
-            botNum = await askQuestion("\n4. Digite o número do WhatsApp que está sendo usado como BOT (ex: 5511888888888):\n> ");
-        }
         
-        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nAUTHORIZED_NUMBER=${authNum}\nBOT_NUMBER=${botNum}\n`;
+        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nAUTHORIZED_NUMBER=${authNum}\n`;
         fs.writeFileSync('.env', envContent);
         
         console.log("\n✅ Configurações salvas no arquivo '.env' com sucesso!");
@@ -59,7 +53,6 @@ async function setupEnv() {
         process.env.MAC_ADDRESS = mac;
         process.env.PC_IP = ip;
         process.env.AUTHORIZED_NUMBER = authNum;
-        process.env.BOT_NUMBER = botNum;
     }
 }
 
@@ -91,7 +84,6 @@ async function connectToWhatsApp () {
     const MAC_ADDRESS = process.env.MAC_ADDRESS;
     const PC_IP = process.env.PC_IP;
     const AUTHORIZED_NUMBER = process.env.AUTHORIZED_NUMBER;
-    const BOT_NUMBER = process.env.BOT_NUMBER;
 
     // 2. Inicia o Bot do WhatsApp
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -106,27 +98,14 @@ async function connectToWhatsApp () {
         printQRInTerminal: false
     });
 
-    // Código de Pareamento (Contorna o erro 405 do QR Code)
-    if (!sock.authState.creds.registered) {
-        if (!isRequestingCode) {
-            isRequestingCode = true;
-            setTimeout(async () => {
-                try {
-                    const code = await sock.requestPairingCode(BOT_NUMBER);
-                    console.log(`\n======================================================`);
-                    console.log(`📲 CÓDIGO DE PAREAMENTO: ${code}`);
-                    console.log(`No seu celular do Bot, vá em: Aparelhos Conectados > Conectar usando número de telefone`);
-                    console.log(`======================================================\n`);
-                } catch (err) {
-                    console.error('Erro ao gerar código de pareamento:', err);
-                    isRequestingCode = false;
-                }
-            }, 3000);
-        }
-    }
-
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            // Gera o QR Code no terminal manualmente
+            qrcode.generate(qr, { small: true });
+            console.log('\n[!] Por favor, escaneie o QR Code acima com o seu celular!');
+        }
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
@@ -134,20 +113,11 @@ async function connectToWhatsApp () {
             console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar...`);
             
             if (shouldReconnect) {
-                // Se a gente está esperando o código ser digitado, não vamos reiniciar o bot a cada 3s,
-                // vamos apenas esperar a biblioteca tentar recuperar a sessão sozinha ou dar um tempo bem maior.
-                if (isRequestingCode && !sock.authState.creds.registered) {
-                    console.log('Aguardando você digitar o código no celular...');
-                    setTimeout(connectToWhatsApp, 15000);
-                } else {
-                    setTimeout(connectToWhatsApp, 3000);
-                }
+                setTimeout(connectToWhatsApp, 3000);
             } else {
-                console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys", apague a variável BOT_NUMBER do .env e rode novamente.');
-                isRequestingCode = false;
+                console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys" e rode novamente.');
             }
         } else if (connection === 'open') {
-            isRequestingCode = false;
             console.log('\n[!] Secretário conectado e pronto!');
             console.log(`[!] O número autorizado a mandar comandos é: ${AUTHORIZED_NUMBER}`);
             console.log('[!] Aguardando mensagem "Ligar PC"...\n');
