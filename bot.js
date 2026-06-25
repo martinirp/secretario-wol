@@ -157,11 +157,23 @@ async function connectToWhatsApp () {
 
         // 1. Verifica se a pessoa está tentando se registrar usando a Frase Secreta
         if (normalizedText === SECRET_LINK_COMMAND) {
-            if (saveAuthorizedUser(sender)) {
-                console.log(`[SUCESSO] O número/LID ${sender} foi autorizado com sucesso!`);
-                await sock.sendMessage(sender, { text: '✅ Seu aparelho foi reconhecido e autorizado com sucesso!\n\nA partir de agora, você só precisa mandar a mensagem *Ligar PC* para acordar o seu computador.' });
-            } else {
+            // Se já for o celular do usuário cadastrado mandando a senha de novo
+            if (authorizedUsers.includes(sender)) {
                 await sock.sendMessage(sender, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar *Ligar PC* quando quiser!' });
+                return;
+            }
+
+            // Se for um aparelho NOVO tentando se cadastrar, mas já tem 1 registrado no arquivo
+            if (authorizedUsers.length >= 1) {
+                console.log(`[ALERTA DE SEGURANÇA] Aparelho bloqueado tentando se registrar: ${sender}`);
+                // Nem mandamos resposta pra pessoa não saber que o bot existe
+                return;
+            }
+
+            // Se a lista estiver vazia, cadastra o aparelho como o ÚNICO dono
+            if (saveAuthorizedUser(sender)) {
+                console.log(`[SUCESSO] Dono registrado: ${sender}. O sistema agora está TRANCADO para novos registros.`);
+                await sock.sendMessage(sender, { text: '✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar. A partir de agora, mande *Ligar PC* para acordar o computador.' });
             }
             return;
         }
