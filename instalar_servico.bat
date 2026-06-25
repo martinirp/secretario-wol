@@ -25,11 +25,14 @@ mkdir "C:\ProgramData\BotDesligar" 2>nul
 echo 2. Copiando o script do servidor para a pasta segura...
 copy /Y "%~dp0desligar_listener.ps1" "C:\ProgramData\BotDesligar\desligar_listener.ps1" >nul
 
-echo 3. Registrando no Windows... (Criando rotina SYSTEM)
+echo 3. Liberando a porta 3000 no Firewall do Windows...
+netsh advfirewall firewall add rule name="BotDesligarPC_Porta3000" dir=in action=allow protocol=TCP localport=3000 >nul 2>&1
+
+echo 4. Registrando no Windows... (Criando rotina SYSTEM)
 :: A rotina roda invisível como SYSTEM, iniciando junto com o boot (igual a um Serviço do Windows nativo)
 schtasks /create /tn "ServicoBotDesligar" /tr "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\BotDesligar\desligar_listener.ps1" /sc onstart /ru SYSTEM /rl HIGHEST /f
 
-echo 4. Iniciando o servidor invisivel agora...
+echo 5. Iniciando o servidor invisivel agora...
 schtasks /run /tn "ServicoBotDesligar"
 
 echo.

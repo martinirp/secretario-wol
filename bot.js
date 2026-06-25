@@ -123,7 +123,13 @@ async function connectToWhatsApp () {
             if (shouldReconnect) {
                 setTimeout(connectToWhatsApp, 3000);
             } else {
-                console.log('\n[!] Você foi deslogado. Apague a pasta "auth_info_baileys" e rode novamente.');
+                console.log('\n[!] Você foi deslogado. Apagando a pasta "auth_info_baileys" automaticamente e reiniciando...');
+                try {
+                    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                } catch (err) {
+                    console.error('Erro ao apagar pasta:', err);
+                }
+                setTimeout(connectToWhatsApp, 3000);
             }
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
@@ -155,6 +161,11 @@ async function connectToWhatsApp () {
         const normalizedText = text.toLowerCase().trim();
         const authorizedUsers = loadAuthorizedUsers();
         
+        // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
+        if (authorizedUsers.length > 0 && !authorizedUsers.includes(sender) && !msg.key.fromMe) {
+            return;
+        }
+
         console.log(`\n[DEBUG] Mensagem recebida: "${text}" | De: ${sender}`);
 
         // 1. Sistema de Registro Secreto
