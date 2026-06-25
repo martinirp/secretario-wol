@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const wol = require('wake_on_lan');
 const qrcode = require('qrcode-terminal');
@@ -95,11 +95,13 @@ async function connectToWhatsApp () {
 
     // 2. Inicia o Bot do WhatsApp
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { version } = await fetchLatestBaileysVersion();
     
     const sock = makeWASocket({
+        version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        browser: Browsers.macOS('Desktop'),
         syncFullHistory: false,
         printQRInTerminal: false
     });
