@@ -10,85 +10,77 @@ require('dotenv').config();
 // IP de broadcast padrão para WoL
 const BROADCAST_ADDRESS = process.env.BROADCAST_ADDRESS || '255.255.255.255';
 
-// Função auxiliar para fazer perguntas no console
 function askQuestion(query) {
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
     });
-
     return new Promise(resolve => rl.question(query, ans => {
         rl.close();
         resolve(ans);
     }));
 }
 
-// Verifica e cria o arquivo .env se for a primeira vez
 async function setupEnv() {
     let mac = process.env.MAC_ADDRESS;
-    let authNum = process.env.AUTHORIZED_NUMBER;
     let ip = process.env.PC_IP;
+    let secret = process.env.SECRET_COMMAND;
 
-    if (!mac || !authNum || !ip) {
+    if (!mac || !ip || !secret) {
         console.log("\n=============================================");
         console.log("   PRIMEIRA EXECUÇÃO - CONFIGURAÇÃO INICIAL  ");
         console.log("=============================================\n");
-
+        
         if (!mac) {
             mac = await askQuestion("1. Digite o MAC Address do PC que será ligado (Ex: 00:1A:2B:3C:4D:5E):\n> ");
         }
         if (!ip) {
             ip = await askQuestion("\n2. Digite o IP local do PC para sabermos quando ele ligar (Ex: 192.168.0.100):\n> ");
         }
-        if (!authNum) {
-            authNum = await askQuestion("\n3. Digite o SEU número pessoal (que vai mandar os comandos, ex: 5511999999999):\n> ");
+        if (!secret) {
+            secret = await askQuestion("\n3. Escolha uma FRASE SECRETA (Senha) para ligar o PC (Ex: Ligar PC 123):\n> ");
         }
-
-        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nAUTHORIZED_NUMBER=${authNum}\n`;
+        
+        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nSECRET_COMMAND=${secret}\n`;
         fs.writeFileSync('.env', envContent);
-
+        
         console.log("\n✅ Configurações salvas no arquivo '.env' com sucesso!");
         console.log("=============================================\n");
-
+        
         process.env.MAC_ADDRESS = mac;
         process.env.PC_IP = ip;
-        process.env.AUTHORIZED_NUMBER = authNum;
+        process.env.SECRET_COMMAND = secret;
     }
 }
 
-// Função para ficar pingando o PC até ele responder (máximo de ~2 minutos)
 async function waitForPcToTurnOn(ipAddress) {
     let attempts = 0;
-    const maxAttempts = 40; // 40 tentativas * 3 segundos = ~2 minutos
-
+    const maxAttempts = 40; 
     return new Promise((resolve) => {
         const interval = setInterval(async () => {
             attempts++;
             const result = await ping.promise.probe(ipAddress, { timeout: 1 });
-
             if (result.alive) {
                 clearInterval(interval);
-                resolve(true); // PC ligou!
+                resolve(true);
             } else if (attempts >= maxAttempts) {
                 clearInterval(interval);
-                resolve(false); // Demorou demais, falhou
+                resolve(false);
             }
-        }, 3000); // Ping a cada 3 segundos
+        }, 3000);
     });
 }
 
-async function connectToWhatsApp() {
-    // 1. Configura as variáveis de ambiente perguntando no terminal se necessário
+async function connectToWhatsApp () {
     await setupEnv();
 
     const MAC_ADDRESS = process.env.MAC_ADDRESS;
     const PC_IP = process.env.PC_IP;
-    const AUTHORIZED_NUMBER = process.env.AUTHORIZED_NUMBER;
+    const SECRET_COMMAND = process.env.SECRET_COMMAND.toLowerCase().trim();
 
-    // 2. Inicia o Bot do WhatsApp
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
-
+    
     const sock = makeWASocket({
         version,
         auth: state,
@@ -102,7 +94,6 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            // Gera o QR Code no terminal manualmente
             qrcode.generate(qr, { small: true });
             console.log('\n[!] Por favor, escaneie o QR Code acima com o seu celular!');
         }
@@ -111,7 +102,7 @@ async function connectToWhatsApp() {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar...`);
-
+            
             if (shouldReconnect) {
                 setTimeout(connectToWhatsApp, 3000);
             } else {
@@ -119,19 +110,17 @@ async function connectToWhatsApp() {
             }
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
-            console.log(`[!] O número autorizado a mandar comandos é: ${AUTHORIZED_NUMBER}`);
-            console.log('[!] Aguardando mensagem "Ligar PC"...\n');
+            console.log(`[!] A sua Frase Secreta é: "${process.env.SECRET_COMMAND}"`);
+            console.log('[!] Aguardando a frase mágica chegar no WhatsApp...\n');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Escutando as mensagens recebidas
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         const msg = messages[0];
         if (!msg.message) return;
 
-        // Extrai o texto ignorando se é mensagem temporária ou normal
         let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
         if (!text && msg.message.ephemeralMessage) {
             text = msg.message.ephemeralMessage.message?.conversation || msg.message.ephemeralMessage.message?.extendedTextMessage?.text;
@@ -139,47 +128,33 @@ async function connectToWhatsApp() {
         
         if (!text) return;
 
-        console.log(`\n[DEBUG] Mensagem detectada! Texto: "${text}" | Enviado por: ${msg.key.remoteJid} | fromMe: ${msg.key.fromMe}`);
+        console.log(`\n[DEBUG] Mensagem detectada! Texto: "${text}" | Enviado por: ${msg.key.remoteJid}`);
 
-        const sender = msg.key.remoteJid;
-        
-        // --- FILTRO DE SEGURANÇA INTELIGENTE ---
-        const cleanSender = sender.replace(/\D/g, ''); 
-        const authSuffix = AUTHORIZED_NUMBER.slice(-8);
+        // Validação da Senha
+        if (text.toLowerCase().trim() === SECRET_COMMAND) {
+            console.log(`[SUCESSO] A frase secreta foi dita! Ligando o PC...`);
+            await sock.sendMessage(msg.key.remoteJid, { text: '🔄 Senha Correta! Enviando sinal para ligar o PC...' });
 
-        const isAuthorized = msg.key.fromMe || cleanSender.includes(authSuffix);
-
-        if (!isAuthorized) {
-            console.log(`[BLOQUEADO] Ignorado pois os últimos 8 dígitos não bateram com a sua senha de número.`);
-            return;
-        }
-
-        console.log('[DEBUG] A mensagem passou pela segurança!');
-
-        if (text.toLowerCase().trim() === 'ligar pc') {
-            console.log(`Comando de ligar recebido de ${sender}.`);
-            await sock.sendMessage(msg.key.remoteJid, { text: '🔄 Enviando sinal... Ficarei de olho pra te avisar quando ele ligar!' });
-
-            // Dispara o Wake on LAN
             wol.wake(MAC_ADDRESS, { address: BROADCAST_ADDRESS }, async (error) => {
                 if (error) {
                     console.error('Erro ao enviar o pacote WoL:', error);
                     await sock.sendMessage(msg.key.remoteJid, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' });
                 } else {
-                    console.log(`Sinal de ligar enviado. Aguardando o PC (${PC_IP}) ficar online...`);
-
-                    // Aguarda até o PC responder ao Ping
+                    console.log(`Sinal enviado. Aguardando o PC (${PC_IP}) ficar online...`);
+                    
                     const isOnline = await waitForPcToTurnOn(PC_IP);
-
+                    
                     if (isOnline) {
                         console.log('O PC respondeu ao Ping! Está online.');
                         await sock.sendMessage(msg.key.remoteJid, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' });
                     } else {
                         console.log('O PC não respondeu após 2 minutos.');
-                        await sock.sendMessage(msg.key.remoteJid, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida. Pode ser que a placa-mãe não tenha respondido ao comando.' });
+                        await sock.sendMessage(msg.key.remoteJid, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida.' });
                     }
                 }
             });
+        } else {
+            console.log(`[BLOQUEADO] A frase não bateu com a senha secreta.`);
         }
     });
 }
