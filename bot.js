@@ -33,7 +33,7 @@ async function setupEnv() {
         console.log("\n=============================================");
         console.log("   PRIMEIRA EXECUÇÃO - CONFIGURAÇÃO INICIAL  ");
         console.log("=============================================\n");
-        
+
         if (!mac) {
             mac = await askQuestion("1. Digite o MAC Address do PC que será ligado (Ex: 00:1A:2B:3C:4D:5E):\n> ");
         }
@@ -43,13 +43,13 @@ async function setupEnv() {
         if (!authNum) {
             authNum = await askQuestion("\n3. Digite o SEU número pessoal (que vai mandar os comandos, ex: 5511999999999):\n> ");
         }
-        
+
         const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nAUTHORIZED_NUMBER=${authNum}\n`;
         fs.writeFileSync('.env', envContent);
-        
+
         console.log("\n✅ Configurações salvas no arquivo '.env' com sucesso!");
         console.log("=============================================\n");
-        
+
         process.env.MAC_ADDRESS = mac;
         process.env.PC_IP = ip;
         process.env.AUTHORIZED_NUMBER = authNum;
@@ -60,12 +60,12 @@ async function setupEnv() {
 async function waitForPcToTurnOn(ipAddress) {
     let attempts = 0;
     const maxAttempts = 40; // 40 tentativas * 3 segundos = ~2 minutos
-    
+
     return new Promise((resolve) => {
         const interval = setInterval(async () => {
             attempts++;
             const result = await ping.promise.probe(ipAddress, { timeout: 1 });
-            
+
             if (result.alive) {
                 clearInterval(interval);
                 resolve(true); // PC ligou!
@@ -77,7 +77,7 @@ async function waitForPcToTurnOn(ipAddress) {
     });
 }
 
-async function connectToWhatsApp () {
+async function connectToWhatsApp() {
     // 1. Configura as variáveis de ambiente perguntando no terminal se necessário
     await setupEnv();
 
@@ -88,7 +88,7 @@ async function connectToWhatsApp () {
     // 2. Inicia o Bot do WhatsApp
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
-    
+
     const sock = makeWASocket({
         version,
         auth: state,
@@ -111,7 +111,7 @@ async function connectToWhatsApp () {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             console.log(`\nConexão fechada (Status: ${statusCode}). Tentando reconectar...`);
-            
+
             if (shouldReconnect) {
                 setTimeout(connectToWhatsApp, 3000);
             } else {
@@ -128,8 +128,8 @@ async function connectToWhatsApp () {
 
     // Escutando as mensagens recebidas
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return; 
-        
+        if (type !== 'notify') return;
+
         const msg = messages[0];
         if (!msg.message) return;
 
@@ -154,10 +154,10 @@ async function connectToWhatsApp () {
                     await sock.sendMessage(msg.key.remoteJid, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' });
                 } else {
                     console.log(`Sinal de ligar enviado. Aguardando o PC (${PC_IP}) ficar online...`);
-                    
+
                     // Aguarda até o PC responder ao Ping
                     const isOnline = await waitForPcToTurnOn(PC_IP);
-                    
+
                     if (isOnline) {
                         console.log('O PC respondeu ao Ping! Está online.');
                         await sock.sendMessage(msg.key.remoteJid, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' });
