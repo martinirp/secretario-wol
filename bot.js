@@ -128,20 +128,33 @@ async function connectToWhatsApp() {
 
     // Escutando as mensagens recebidas
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-
         const msg = messages[0];
         if (!msg.message) return;
 
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        // Extrai o texto ignorando se é mensagem temporária ou normal
+        let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        if (!text && msg.message.ephemeralMessage) {
+            text = msg.message.ephemeralMessage.message?.conversation || msg.message.ephemeralMessage.message?.extendedTextMessage?.text;
+        }
+        
         if (!text) return;
 
-        const sender = msg.key.remoteJid;
+        console.log(`\n[DEBUG] Mensagem detectada! Texto: "${text}" | Enviado por: ${msg.key.remoteJid} | fromMe: ${msg.key.fromMe}`);
 
-        // Filtro de Segurança
-        if (!sender.includes(AUTHORIZED_NUMBER)) {
+        const sender = msg.key.remoteJid;
+        
+        // --- FILTRO DE SEGURANÇA INTELIGENTE ---
+        const cleanSender = sender.replace(/\D/g, ''); 
+        const authSuffix = AUTHORIZED_NUMBER.slice(-8);
+
+        const isAuthorized = msg.key.fromMe || cleanSender.includes(authSuffix);
+
+        if (!isAuthorized) {
+            console.log(`[BLOQUEADO] Ignorado pois os últimos 8 dígitos não bateram com a sua senha de número.`);
             return;
         }
+
+        console.log('[DEBUG] A mensagem passou pela segurança!');
 
         if (text.toLowerCase().trim() === 'ligar pc') {
             console.log(`Comando de ligar recebido de ${sender}.`);
