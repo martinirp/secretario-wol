@@ -9,6 +9,7 @@ require('dotenv').config();
 
 // IP de broadcast padrão para WoL
 const BROADCAST_ADDRESS = process.env.BROADCAST_ADDRESS || '255.255.255.255';
+const AUTHORIZED_USERS_FILE = 'authorized_users.json';
 
 function askQuestion(query) {
     const rl = readline.createInterface({
@@ -21,10 +22,30 @@ function askQuestion(query) {
     }));
 }
 
+// Carrega a lista de números/LIDs autorizados
+function loadAuthorizedUsers() {
+    if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
+        const data = fs.readFileSync(AUTHORIZED_USERS_FILE);
+        return JSON.parse(data);
+    }
+    return [];
+}
+
+// Salva um novo número/LID na lista
+function saveAuthorizedUser(senderId) {
+    const users = loadAuthorizedUsers();
+    if (!users.includes(senderId)) {
+        users.push(senderId);
+        fs.writeFileSync(AUTHORIZED_USERS_FILE, JSON.stringify(users));
+        return true;
+    }
+    return false; // Já estava autorizado
+}
+
 async function setupEnv() {
     let mac = process.env.MAC_ADDRESS;
     let ip = process.env.PC_IP;
-    let secret = process.env.SECRET_COMMAND;
+    let secret = process.env.SECRET_LINK_COMMAND;
 
     if (!mac || !ip || !secret) {
         console.log("\n=============================================");
@@ -38,10 +59,10 @@ async function setupEnv() {
             ip = await askQuestion("\n2. Digite o IP local do PC para sabermos quando ele ligar (Ex: 192.168.0.100):\n> ");
         }
         if (!secret) {
-            secret = await askQuestion("\n3. Escolha uma FRASE SECRETA (Senha) para ligar o PC (Ex: Ligar PC 123):\n> ");
+            secret = await askQuestion("\n3. Escolha uma FRASE SECRETA para registrar seu celular (Ex: Registrar Chefe 123):\n> ");
         }
         
-        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nSECRET_COMMAND=${secret}\n`;
+        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nSECRET_LINK_COMMAND=${secret}\n`;
         fs.writeFileSync('.env', envContent);
         
         console.log("\n✅ Configurações salvas no arquivo '.env' com sucesso!");
@@ -49,7 +70,7 @@ async function setupEnv() {
         
         process.env.MAC_ADDRESS = mac;
         process.env.PC_IP = ip;
-        process.env.SECRET_COMMAND = secret;
+        process.env.SECRET_LINK_COMMAND = secret;
     }
 }
 
@@ -76,7 +97,7 @@ async function connectToWhatsApp () {
 
     const MAC_ADDRESS = process.env.MAC_ADDRESS;
     const PC_IP = process.env.PC_IP;
-    const SECRET_COMMAND = process.env.SECRET_COMMAND.toLowerCase().trim();
+    const SECRET_LINK_COMMAND = process.env.SECRET_LINK_COMMAND.toLowerCase().trim();
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
@@ -110,8 +131,8 @@ async function connectToWhatsApp () {
             }
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
-            console.log(`[!] A sua Frase Secreta é: "${process.env.SECRET_COMMAND}"`);
-            console.log('[!] Aguardando a frase mágica chegar no WhatsApp...\n');
+            console.log(`[!] Para registrar um novo celular, mande a frase: "${process.env.SECRET_LINK_COMMAND}"`);
+            console.log('[!] Celulares já registrados podem apenas mandar "Ligar PC".\n');
         }
     });
 
@@ -127,34 +148,51 @@ async function connectToWhatsApp () {
         }
         
         if (!text) return;
+        
+        const sender = msg.key.remoteJid;
+        const normalizedText = text.toLowerCase().trim();
+        const authorizedUsers = loadAuthorizedUsers();
+        
+        console.log(`\n[DEBUG] Mensagem recebida: "${text}" | De: ${sender}`);
 
-        console.log(`\n[DEBUG] Mensagem detectada! Texto: "${text}" | Enviado por: ${msg.key.remoteJid}`);
+        // 1. Verifica se a pessoa está tentando se registrar usando a Frase Secreta
+        if (normalizedText === SECRET_LINK_COMMAND) {
+            if (saveAuthorizedUser(sender)) {
+                console.log(`[SUCESSO] O número/LID ${sender} foi autorizado com sucesso!`);
+                await sock.sendMessage(sender, { text: '✅ Seu aparelho foi reconhecido e autorizado com sucesso!\n\nA partir de agora, você só precisa mandar a mensagem *Ligar PC* para acordar o seu computador.' });
+            } else {
+                await sock.sendMessage(sender, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar *Ligar PC* quando quiser!' });
+            }
+            return;
+        }
 
-        // Validação da Senha
-        if (text.toLowerCase().trim() === SECRET_COMMAND) {
-            console.log(`[SUCESSO] A frase secreta foi dita! Ligando o PC...`);
-            await sock.sendMessage(msg.key.remoteJid, { text: '🔄 Senha Correta! Enviando sinal para ligar o PC...' });
+        // 2. Se for o comando de ligar, verifica se o usuário está na lista de autorizados
+        if (normalizedText === 'ligar pc') {
+            if (authorizedUsers.includes(sender) || msg.key.fromMe) {
+                console.log(`[COMANDO] Ligar PC recebido de um usuário autorizado (${sender}).`);
+                await sock.sendMessage(sender, { text: '🔄 Enviando sinal mágico na rede... Ficarei de olho pra te avisar quando ele ligar!' });
 
-            wol.wake(MAC_ADDRESS, { address: BROADCAST_ADDRESS }, async (error) => {
-                if (error) {
-                    console.error('Erro ao enviar o pacote WoL:', error);
-                    await sock.sendMessage(msg.key.remoteJid, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' });
-                } else {
-                    console.log(`Sinal enviado. Aguardando o PC (${PC_IP}) ficar online...`);
-                    
-                    const isOnline = await waitForPcToTurnOn(PC_IP);
-                    
-                    if (isOnline) {
-                        console.log('O PC respondeu ao Ping! Está online.');
-                        await sock.sendMessage(msg.key.remoteJid, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' });
+                wol.wake(MAC_ADDRESS, { address: BROADCAST_ADDRESS }, async (error) => {
+                    if (error) {
+                        console.error('Erro ao enviar o pacote WoL:', error);
+                        await sock.sendMessage(sender, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' });
                     } else {
-                        console.log('O PC não respondeu após 2 minutos.');
-                        await sock.sendMessage(msg.key.remoteJid, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida.' });
+                        console.log(`Sinal enviado. Aguardando o PC (${PC_IP}) ficar online...`);
+                        
+                        const isOnline = await waitForPcToTurnOn(PC_IP);
+                        
+                        if (isOnline) {
+                            console.log('O PC respondeu ao Ping! Está online.');
+                            await sock.sendMessage(sender, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' });
+                        } else {
+                            console.log('O PC não respondeu após 2 minutos.');
+                            await sock.sendMessage(sender, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida.' });
+                        }
                     }
-                }
-            });
-        } else {
-            console.log(`[BLOQUEADO] A frase não bateu com a senha secreta.`);
+                });
+            } else {
+                console.log(`[BLOQUEADO] Tentativa de ligar o PC de um usuário não registrado: ${sender}`);
+            }
         }
     });
 }
