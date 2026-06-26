@@ -150,104 +150,99 @@ async function connectToWhatsApp () {
         console.log(`[DEBUG] EVENTO messages.upsert | tipo: ${type} | msgs: ${messages.length}`);
         
         if (type !== 'notify') {
-            console.log(`[DEBUG] Ignorado pois type não é notify, e sim: ${type}`);
             return; // Evita processar mensagens antigas do histórico
         }
 
-        const msg = messages[0];
-        if (!msg.message) return;
+        for (const msg of messages) {
+            if (!msg.message) continue;
 
-        // ID exata da conversa (grupo ou pessoa) onde a mensagem chegou. É para cá que o bot deve responder.
-        const chatJid = msg.key.remoteJid;
-        if (!chatJid || chatJid === 'status@broadcast') return;
+            // ID exata da conversa (grupo ou pessoa) onde a mensagem chegou. É para cá que o bot deve responder.
+            const chatJid = msg.key.remoteJid;
+            if (!chatJid || chatJid === 'status@broadcast') continue;
 
-        // ID real da pessoa que enviou a mensagem (útil para verificar em grupos quem mandou)
-        let senderUser = chatJid;
-        if (chatJid.endsWith('@g.us')) {
-            senderUser = msg.key.participant;
-        }
-        
-        // Normaliza o usuário para checar no banco de dados (remove o :12 de multi-device)
-        const normalizedSenderUser = senderUser ? jidNormalizedUser(senderUser) : '';
-
-        // Melhorar a extração de texto para diferentes tipos de mensagens
-        let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-        
-        if (!text && msg.message.ephemeralMessage) {
-            text = msg.message.ephemeralMessage.message?.conversation || msg.message.ephemeralMessage.message?.extendedTextMessage?.text;
-        }
-
-        if (!text && msg.message.imageMessage) {
-            text = msg.message.imageMessage.caption;
-        }
-
-        if (!text && msg.message.videoMessage) {
-            text = msg.message.videoMessage.caption;
-        }
-        
-        // Remover espaços duplicados e forçar minúscula
-        let normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
-
-        const authorizedUsers = loadAuthorizedUsers();
-        
-        // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
-        if (authorizedUsers.length > 0 && !authorizedUsers.includes(normalizedSenderUser) && !msg.key.fromMe) {
-            return;
-        }
-
-        console.log(`\n[DEBUG] Mensagem recebida: "${text}" | Comando: "${normalizedText}" | De: ${normalizedSenderUser} | Chat: ${chatJid}`);
-
-        // 1. Sistema de Registro Secreto
-        if (normalizedText === SECRET_LINK_COMMAND) {
-            if (authorizedUsers.includes(normalizedSenderUser)) {
-                await sock.sendMessage(chatJid, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' }, { quoted: msg });
-                return;
+            // ID real da pessoa que enviou a mensagem (útil para verificar em grupos quem mandou)
+            let senderUser = chatJid;
+            if (chatJid.endsWith('@g.us')) {
+                senderUser = msg.key.participant;
             }
-            if (authorizedUsers.length >= 1) {
-                console.log(`[ALERTA DE SEGURANÇA] Aparelho bloqueado tentando se registrar: ${normalizedSenderUser}`);
-                return; // Limite de 1 usuário
+            
+            // Normaliza o usuário para checar no banco de dados (remove o :12 de multi-device)
+            const normalizedSenderUser = senderUser ? jidNormalizedUser(senderUser) : '';
+
+            // Extração de texto idêntica ao BossBot
+            const text = msg.message.conversation || 
+                         msg.message.extendedTextMessage?.text || 
+                         msg.message.ephemeralMessage?.message?.conversation ||
+                         msg.message.ephemeralMessage?.message?.extendedTextMessage?.text ||
+                         msg.message.imageMessage?.caption || 
+                         msg.message.videoMessage?.caption || 
+                         '';
+
+            if (!text) continue;
+            
+            // Remover espaços duplicados e forçar minúscula
+            let normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
+
+            const authorizedUsers = loadAuthorizedUsers();
+            
+            // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
+            if (authorizedUsers.length > 0 && !authorizedUsers.includes(normalizedSenderUser) && !msg.key.fromMe) {
+                continue;
             }
 
-            if (saveAuthorizedUser(normalizedSenderUser)) {
-                console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser}. Sistema TRANCADO.`);
-                await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` }, { quoted: msg });
-            }
-            return;
-        }
+            console.log(`\n[DEBUG] Mensagem recebida: "${text}" | Comando: "${normalizedText}" | De: ${normalizedSenderUser} | Chat: ${chatJid}`);
 
-        // Sistema de DESREGISTRO (vesh)
-        if (normalizedText === 'vesh') {
-            if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
-                if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
-                    fs.unlinkSync(AUTHORIZED_USERS_FILE);
+            // 1. Sistema de Registro Secreto
+            if (normalizedText === SECRET_LINK_COMMAND) {
+                if (authorizedUsers.includes(normalizedSenderUser)) {
+                    await sock.sendMessage(chatJid, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' }, { quoted: msg });
+                    continue;
                 }
-                console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${normalizedSenderUser}).`);
-                await sock.sendMessage(chatJid, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` }, { quoted: msg });
-            }
-            return;
-        }
+                if (authorizedUsers.length >= 1) {
+                    console.log(`[ALERTA DE SEGURANÇA] Aparelho bloqueado tentando se registrar: ${normalizedSenderUser}`);
+                    continue; // Limite de 1 usuário
+                }
 
-        // 2. Sistema de Execução Dinâmica de Comandos
-        if (commands.has(normalizedText)) {
-            // Verifica se o usuário tem permissão
-            if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
-                const command = commands.get(normalizedText);
-                try {
-                    // Passa a msg original como quarto argumento para o comando poder usar quote
-                    await command.execute(sock, chatJid, envConfig, msg);
-                } catch (error) {
-                    console.error(`Erro ao executar comando ${command.name}:`, error);
-                    await sock.sendMessage(chatJid, { text: '❌ Ocorreu um erro interno ao executar este comando.' }, { quoted: msg });
+                if (saveAuthorizedUser(normalizedSenderUser)) {
+                    console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser}. Sistema TRANCADO.`);
+                    await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` }, { quoted: msg });
+                }
+                continue;
+            }
+
+            // Sistema de DESREGISTRO (vesh)
+            if (normalizedText === 'vesh') {
+                if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
+                    if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
+                        fs.unlinkSync(AUTHORIZED_USERS_FILE);
+                    }
+                    console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${normalizedSenderUser}).`);
+                    await sock.sendMessage(chatJid, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` }, { quoted: msg });
+                }
+                continue;
+            }
+
+            // 2. Sistema de Execução Dinâmica de Comandos
+            if (commands.has(normalizedText)) {
+                // Verifica se o usuário tem permissão
+                if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
+                    const command = commands.get(normalizedText);
+                    try {
+                        // Passa a msg original como quarto argumento para o comando poder usar quote
+                        await command.execute(sock, chatJid, envConfig, msg);
+                    } catch (error) {
+                        console.error(`Erro ao executar comando ${command.name}:`, error);
+                        await sock.sendMessage(chatJid, { text: '❌ Ocorreu um erro interno ao executar este comando.' }, { quoted: msg });
+                    }
+                } else {
+                    console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${normalizedSenderUser}`);
                 }
             } else {
-                console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${normalizedSenderUser}`);
-            }
-        } else {
-            // Se o usuário mandou algo que parece um comando e está registrado, avisamos
-            if ((authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) && !normalizedText.includes(' ')) {
-                // Removemos o aviso para não ficar chato caso a pessoa apenas fale uma palavra normal no chat
-                // Mas vamos registrar no debug
-                console.log(`[DEBUG] Comando não encontrado no Map: "${normalizedText}"`);
+                // Se o usuário mandou algo que parece um comando e está registrado, avisamos
+                if ((authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) && !normalizedText.includes(' ')) {
+                    // Removemos o aviso para não ficar chato caso a pessoa apenas fale uma palavra normal no chat
+                    console.log(`[DEBUG] Comando não encontrado no Map: "${normalizedText}"`);
+                }
             }
         }
     });
