@@ -185,10 +185,13 @@ async function connectToWhatsApp () {
             text = msg.message.videoMessage.caption;
         }
         
-        if (!text) return;
-        
-        // Transformar tudo em minúscula e remover espaços em excesso (ex: "LIGAR   PC" vira "ligar pc")
-        const normalizedText = text.toLowerCase().trim().replace(/\s+/g, ' ');
+        // Remover prefixos ! ou / e espaços duplicados, e forçar minúscula
+        let normalizedText = text.trim().replace(/\s+/g, ' ');
+        if (normalizedText.startsWith('!') || normalizedText.startsWith('/')) {
+            normalizedText = normalizedText.slice(1).trim();
+        }
+        normalizedText = normalizedText.toLowerCase();
+
         const authorizedUsers = loadAuthorizedUsers();
         
         // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
@@ -196,12 +199,12 @@ async function connectToWhatsApp () {
             return;
         }
 
-        console.log(`\n[DEBUG] Mensagem recebida: "${text}" | De: ${normalizedSenderUser} | Chat: ${chatJid}`);
+        console.log(`\n[DEBUG] Mensagem recebida: "${text}" | Comando: "${normalizedText}" | De: ${normalizedSenderUser} | Chat: ${chatJid}`);
 
         // 1. Sistema de Registro Secreto
         if (normalizedText === SECRET_LINK_COMMAND) {
             if (authorizedUsers.includes(normalizedSenderUser)) {
-                await sock.sendMessage(chatJid, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' });
+                await sock.sendMessage(chatJid, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' }, { quoted: msg });
                 return;
             }
             if (authorizedUsers.length >= 1) {
@@ -211,7 +214,7 @@ async function connectToWhatsApp () {
 
             if (saveAuthorizedUser(normalizedSenderUser)) {
                 console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser}. Sistema TRANCADO.`);
-                await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
+                await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` }, { quoted: msg });
             }
             return;
         }
@@ -223,7 +226,7 @@ async function connectToWhatsApp () {
                     fs.unlinkSync(AUTHORIZED_USERS_FILE);
                 }
                 console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${normalizedSenderUser}).`);
-                await sock.sendMessage(chatJid, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` });
+                await sock.sendMessage(chatJid, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` }, { quoted: msg });
             }
             return;
         }
@@ -234,19 +237,21 @@ async function connectToWhatsApp () {
             if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                 const command = commands.get(normalizedText);
                 try {
-                    await command.execute(sock, chatJid, envConfig);
+                    // Passa a msg original como quarto argumento para o comando poder usar quote
+                    await command.execute(sock, chatJid, envConfig, msg);
                 } catch (error) {
                     console.error(`Erro ao executar comando ${command.name}:`, error);
-                    await sock.sendMessage(chatJid, { text: '❌ Ocorreu um erro interno ao executar este comando.' });
+                    await sock.sendMessage(chatJid, { text: '❌ Ocorreu um erro interno ao executar este comando.' }, { quoted: msg });
                 }
             } else {
                 console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${normalizedSenderUser}`);
             }
         } else {
-            // Se o usuário mandou só uma palavra (possível comando digitado errado) e está registrado, avisamos
+            // Se o usuário mandou algo que parece um comando e está registrado, avisamos
             if ((authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) && !normalizedText.includes(' ')) {
+                // Removemos o aviso para não ficar chato caso a pessoa apenas fale uma palavra normal no chat
+                // Mas vamos registrar no debug
                 console.log(`[DEBUG] Comando não encontrado no Map: "${normalizedText}"`);
-                await sock.sendMessage(chatJid, { text: `❓ Comando não encontrado: *${normalizedText}*\n\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
             }
         }
     });

@@ -25,7 +25,7 @@ module.exports = {
     description: 'Liga o computador via Wake On LAN',
     execute: async (sock, sender, env) => {
         console.log(`[COMANDO] Ligar PC recebido de um usuário autorizado (${sender}).`);
-        await sock.sendMessage(sender, { text: '🔄 Enviando sinal mágico na rede... Ficarei de olho pra te avisar quando ele ligar!' });
+        await sock.sendMessage(sender, { text: '🔄 Acabei de enviar o sinal pra ligar seu pc, aguarde um momento!' });
 
         wol.wake(env.MAC_ADDRESS, { address: env.BROADCAST_ADDRESS }, async (error) => {
             if (error) {
@@ -33,9 +33,9 @@ module.exports = {
                 await sock.sendMessage(sender, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' });
             } else {
                 console.log(`Sinal enviado. Aguardando o PC (${env.PC_IP}) ficar online...`);
-                
+
                 const isOnline = await waitForPcToTurnOn(env.PC_IP);
-                
+
                 if (isOnline) {
                     console.log('O PC respondeu ao Ping! Está online.');
                     await sock.sendMessage(sender, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' });
