@@ -157,13 +157,18 @@ async function connectToWhatsApp () {
         const msg = messages[0];
         if (!msg.message) return;
 
-        // Normaliza o JID para remover o ":12" de dispositivos conectados, evitando que a mensagem se perca no WhatsApp
-        const sender = jidNormalizedUser(msg.key.remoteJid);
+        // ID exata da conversa (grupo ou pessoa) onde a mensagem chegou. É para cá que o bot deve responder.
+        const chatJid = msg.key.remoteJid;
+        if (!chatJid || chatJid === 'status@broadcast') return;
 
-        // IGNORAR MENSAGENS DE GRUPOS E STATUS
-        if (!sender || sender.endsWith('@g.us') || sender === 'status@broadcast') {
-            return;
+        // ID real da pessoa que enviou a mensagem (útil para verificar em grupos quem mandou)
+        let senderUser = chatJid;
+        if (chatJid.endsWith('@g.us')) {
+            senderUser = msg.key.participant;
         }
+        
+        // Normaliza o usuário para checar no banco de dados (remove o :12 de multi-device)
+        const normalizedSenderUser = senderUser ? jidNormalizedUser(senderUser) : '';
 
         // Melhorar a extração de texto para diferentes tipos de mensagens
         let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
@@ -182,42 +187,43 @@ async function connectToWhatsApp () {
         
         if (!text) return;
         
-        const normalizedText = text.toLowerCase().trim();
+        // Transformar tudo em minúscula e remover espaços em excesso (ex: "LIGAR   PC" vira "ligar pc")
+        const normalizedText = text.toLowerCase().trim().replace(/\s+/g, ' ');
         const authorizedUsers = loadAuthorizedUsers();
         
         // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
-        if (authorizedUsers.length > 0 && !authorizedUsers.includes(sender) && !msg.key.fromMe) {
+        if (authorizedUsers.length > 0 && !authorizedUsers.includes(normalizedSenderUser) && !msg.key.fromMe) {
             return;
         }
 
-        console.log(`\n[DEBUG] Mensagem recebida: "${text}" | De: ${sender}`);
+        console.log(`\n[DEBUG] Mensagem recebida: "${text}" | De: ${normalizedSenderUser} | Chat: ${chatJid}`);
 
         // 1. Sistema de Registro Secreto
         if (normalizedText === SECRET_LINK_COMMAND) {
-            if (authorizedUsers.includes(sender)) {
-                await sock.sendMessage(sender, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' });
+            if (authorizedUsers.includes(normalizedSenderUser)) {
+                await sock.sendMessage(chatJid, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' });
                 return;
             }
             if (authorizedUsers.length >= 1) {
-                console.log(`[ALERTA DE SEGURANÇA] Aparelho bloqueado tentando se registrar: ${sender}`);
+                console.log(`[ALERTA DE SEGURANÇA] Aparelho bloqueado tentando se registrar: ${normalizedSenderUser}`);
                 return; // Limite de 1 usuário
             }
 
-            if (saveAuthorizedUser(sender)) {
-                console.log(`[SUCESSO] Dono registrado: ${sender}. Sistema TRANCADO.`);
-                await sock.sendMessage(sender, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
+            if (saveAuthorizedUser(normalizedSenderUser)) {
+                console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser}. Sistema TRANCADO.`);
+                await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
             }
             return;
         }
 
         // Sistema de DESREGISTRO (vesh)
         if (normalizedText === 'vesh') {
-            if (authorizedUsers.includes(sender) || msg.key.fromMe) {
+            if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                 if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
                     fs.unlinkSync(AUTHORIZED_USERS_FILE);
                 }
-                console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${sender}).`);
-                await sock.sendMessage(sender, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` });
+                console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${normalizedSenderUser}).`);
+                await sock.sendMessage(chatJid, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` });
             }
             return;
         }
@@ -225,22 +231,22 @@ async function connectToWhatsApp () {
         // 2. Sistema de Execução Dinâmica de Comandos
         if (commands.has(normalizedText)) {
             // Verifica se o usuário tem permissão
-            if (authorizedUsers.includes(sender) || msg.key.fromMe) {
+            if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                 const command = commands.get(normalizedText);
                 try {
-                    await command.execute(sock, sender, envConfig);
+                    await command.execute(sock, chatJid, envConfig);
                 } catch (error) {
                     console.error(`Erro ao executar comando ${command.name}:`, error);
-                    await sock.sendMessage(sender, { text: '❌ Ocorreu um erro interno ao executar este comando.' });
+                    await sock.sendMessage(chatJid, { text: '❌ Ocorreu um erro interno ao executar este comando.' });
                 }
             } else {
-                console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${sender}`);
+                console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${normalizedSenderUser}`);
             }
         } else {
             // Se o usuário mandou só uma palavra (possível comando digitado errado) e está registrado, avisamos
-            if ((authorizedUsers.includes(sender) || msg.key.fromMe) && !normalizedText.includes(' ')) {
+            if ((authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) && !normalizedText.includes(' ')) {
                 console.log(`[DEBUG] Comando não encontrado no Map: "${normalizedText}"`);
-                await sock.sendMessage(sender, { text: `❓ Comando não encontrado: *${normalizedText}*\n\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
+                await sock.sendMessage(chatJid, { text: `❓ Comando não encontrado: *${normalizedText}*\n\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
             }
         }
     });
