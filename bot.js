@@ -147,7 +147,12 @@ async function connectToWhatsApp () {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return; // Evita processar mensagens antigas do histórico
+        console.log(`[DEBUG] EVENTO messages.upsert | tipo: ${type} | msgs: ${messages.length}`);
+        
+        if (type !== 'notify') {
+            console.log(`[DEBUG] Ignorado pois type não é notify, e sim: ${type}`);
+            return; // Evita processar mensagens antigas do histórico
+        }
 
         const msg = messages[0];
         if (!msg.message) return;
