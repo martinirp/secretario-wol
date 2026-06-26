@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion, jidNormalizedUser } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
@@ -157,7 +157,8 @@ async function connectToWhatsApp () {
         const msg = messages[0];
         if (!msg.message) return;
 
-        const sender = msg.key.remoteJid;
+        // Normaliza o JID para remover o ":12" de dispositivos conectados, evitando que a mensagem se perca no WhatsApp
+        const sender = jidNormalizedUser(msg.key.remoteJid);
 
         // IGNORAR MENSAGENS DE GRUPOS E STATUS
         if (!sender || sender.endsWith('@g.us') || sender === 'status@broadcast') {
