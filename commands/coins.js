@@ -65,7 +65,28 @@ module.exports = {
                 // Pega os últimos 7 registros (mais recentes)
                 const ultimos = items.slice(-7).reverse(); // Reverse para mostrar o mais novo primeiro
 
-                let responseText = `RELATÓRIO DE TRANSAÇÕES RECENTES\n\n`;
+                let totalRecebido = 0;
+                let totalPendente = 0;
+                let totalUsado = 0;
+
+                items.forEach(item => {
+                    const amount = Number(item.amount || item.coins || 0);
+                    if (!isNaN(amount)) {
+                        totalRecebido += amount;
+                        if (item.used) {
+                            totalUsado += amount;
+                        } else {
+                            totalPendente += amount;
+                        }
+                    }
+                });
+
+                let responseText = `RELATÓRIO DE TRANSAÇÕES E SALDO\n\n`;
+                responseText += `[ SALDO CALCULADO (BASEADO NO HISTÓRICO) ]\n`;
+                responseText += `- Total Histórico: ${totalRecebido} TC\n`;
+                responseText += `- Disponível/Pendente: ${totalPendente} TC\n`;
+                responseText += `- Já Usado: ${totalUsado} TC\n\n`;
+                responseText += `[ ÚLTIMAS TRANSAÇÕES ]\n\n`;
 
                 ultimos.forEach((item, index) => {
                     const char = item.character || item.name || 'Desconhecido';
