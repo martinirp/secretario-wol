@@ -185,12 +185,8 @@ async function connectToWhatsApp () {
             text = msg.message.videoMessage.caption;
         }
         
-        // Remover prefixos ! ou / e espaços duplicados, e forçar minúscula
-        let normalizedText = text.trim().replace(/\s+/g, ' ');
-        if (normalizedText.startsWith('!') || normalizedText.startsWith('/')) {
-            normalizedText = normalizedText.slice(1).trim();
-        }
-        normalizedText = normalizedText.toLowerCase();
+        // Remover espaços duplicados e forçar minúscula
+        let normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
 
         const authorizedUsers = loadAuthorizedUsers();
         
