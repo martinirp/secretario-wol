@@ -40,11 +40,17 @@ function loadAuthorizedUsers() {
     return [];
 }
 
-function saveAuthorizedUser(senderId) {
+function getAuthorizedJids() {
     const users = loadAuthorizedUsers();
-    if (!users.includes(senderId)) {
-        users.push(senderId);
-        fs.writeFileSync(AUTHORIZED_USERS_FILE, JSON.stringify(users));
+    return users.map(u => typeof u === 'string' ? u : u.jid);
+}
+
+function saveAuthorizedUser(senderId, senderName) {
+    const users = loadAuthorizedUsers();
+    const jids = getAuthorizedJids();
+    if (!jids.includes(senderId)) {
+        users.push({ jid: senderId, name: senderName, registeredAt: new Date().toISOString() });
+        fs.writeFileSync(AUTHORIZED_USERS_FILE, JSON.stringify(users, null, 2));
         return true;
     }
     return false;
@@ -135,7 +141,7 @@ async function connectToWhatsApp () {
             console.log('\n[!] Secretário conectado e pronto!');
             console.log(`[!] Comandos carregados: ${Array.from(commands.keys()).join(', ')}`);
             
-            const authorizedUsers = loadAuthorizedUsers();
+            const authorizedUsers = getAuthorizedJids();
             if (authorizedUsers.length > 0) {
                 console.log(`[!] Bot já possui um dono registrado. Tudo pronto!\n`);
             } else {
@@ -156,18 +162,16 @@ async function connectToWhatsApp () {
         for (const msg of messages) {
             if (!msg.message) continue;
 
-            // ID exata da conversa (grupo ou pessoa) onde a mensagem chegou. É para cá que o bot deve responder.
-            const chatJid = msg.key.remoteJid;
-            if (!chatJid || chatJid === 'status@broadcast') continue;
+            // Copiando do BossBot: ID exata e extração de dados
+            const remoteJid = msg.key.remoteJid;
+            if (!remoteJid || remoteJid === 'status@broadcast') continue;
 
-            // ID real da pessoa que enviou a mensagem (útil para verificar em grupos quem mandou)
-            let senderUser = chatJid;
-            if (chatJid.endsWith('@g.us')) {
-                senderUser = msg.key.participant;
-            }
-            
-            // Normaliza o usuário para checar no banco de dados (remove o :12 de multi-device)
-            const normalizedSenderUser = senderUser ? jidNormalizedUser(senderUser) : '';
+            const isGroup = remoteJid.endsWith('@g.us');
+            const senderJid = jidNormalizedUser(msg.key.participant || remoteJid);
+            const senderPhone = senderJid.split('@')[0];
+            const senderName = msg.pushName || '';
+            const normalizedSenderUser = senderJid;
+            const chatJid = remoteJid;
 
             // Extração de texto idêntica ao BossBot
             const text = msg.message.conversation || 
@@ -183,7 +187,7 @@ async function connectToWhatsApp () {
             // Remover espaços duplicados e forçar minúscula
             let normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
 
-            const authorizedUsers = loadAuthorizedUsers();
+            const authorizedUsers = getAuthorizedJids();
             
             // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
             if (authorizedUsers.length > 0 && !authorizedUsers.includes(normalizedSenderUser) && !msg.key.fromMe) {
@@ -203,8 +207,8 @@ async function connectToWhatsApp () {
                     continue; // Limite de 1 usuário
                 }
 
-                if (saveAuthorizedUser(normalizedSenderUser)) {
-                    console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser}. Sistema TRANCADO.`);
+                if (saveAuthorizedUser(normalizedSenderUser, senderName)) {
+                    console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser} (${senderName}). Sistema TRANCADO.`);
                     await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` }, { quoted: msg });
                 }
                 continue;
@@ -236,9 +240,17 @@ async function connectToWhatsApp () {
                 // Verifica se o usuário tem permissão
                 if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                     try {
-                        // Usa o JID do grupo se for grupo, senão usa o JID real do dono
-                        const OWNER_JID = process.env.OWNER_JID || '5532996865840@s.whatsapp.net';
-                        const targetJid = chatJid.endsWith('@g.us') ? chatJid : OWNER_JID;
+                        // Para grupos, responde no grupo. Para DM, precisamos normalizar o JID (remover o :12) senão o Baileys não envia
+                        let targetJid = isGroup ? chatJid : normalizedSenderUser;
+                        targetJid = targetJid.replace('@lid', '@s.whatsapp.net');
+                        
+                        // FIX PARA SELF-BOT: Se a mensagem foi mandada por você mesmo no seu próprio chat ("Você")
+                        if (msg.key.fromMe && !isGroup) {
+                            targetJid = jidNormalizedUser(sock.user.id);
+                        }
+
+                        console.log(`\n[DEBUG TARGET JID] remoteJid: ${chatJid} | normalizedSender: ${normalizedSenderUser} | sock.user.id: ${sock.user.id} | ENVIANDO RESPOSTA PARA: ${targetJid}\n`);
+
                         // Passa a msg original como quarto argumento para o comando poder usar quote
                         await foundCommand.execute(sock, targetJid, envConfig, msg);
                     } catch (error) {
