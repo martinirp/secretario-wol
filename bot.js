@@ -203,12 +203,6 @@ async function connectToWhatsApp () {
                     continue; // Limite de 1 usuário
                 }
 
-                console.log('[REGISTRO] chatJid:', chatJid);
-                console.log('[REGISTRO] senderUser:', senderUser);
-                console.log('[REGISTRO] normalizedSenderUser:', normalizedSenderUser);
-                console.log('[REGISTRO] msg.key:', JSON.stringify(msg.key));
-                console.log('[REGISTRO] msg.participant:', msg.participant);
-
                 if (saveAuthorizedUser(normalizedSenderUser)) {
                     console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser}. Sistema TRANCADO.`);
                     await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` }, { quoted: msg });
@@ -242,7 +236,9 @@ async function connectToWhatsApp () {
                 // Verifica se o usuário tem permissão
                 if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                     try {
-                        const targetJid = chatJid.endsWith('@g.us') ? chatJid : jidNormalizedUser(chatJid);
+                        // Usa o JID do grupo se for grupo, senão usa o JID real do dono
+                        const OWNER_JID = process.env.OWNER_JID || '5532996865840@s.whatsapp.net';
+                        const targetJid = chatJid.endsWith('@g.us') ? chatJid : OWNER_JID;
                         // Passa a msg original como quarto argumento para o comando poder usar quote
                         await foundCommand.execute(sock, targetJid, envConfig, msg);
                     } catch (error) {
