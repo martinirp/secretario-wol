@@ -199,11 +199,7 @@ async function connectToWhatsApp() {
             if (foundCommand) {
                 if (authorizedUsers.includes(senderJid) || msg.key.fromMe) {
                     try {
-                        // FIX SELF-BOT: Se enviou pra si mesmo, a resposta deve ir para o ID logado
-                        let targetJid = remoteJid;
-                        if (msg.key.fromMe && !isGroup) {
-                            targetJid = jidNormalizedUser(sock.user.id);
-                        }
+                        const targetJid = remoteJid; // Usa o JID bruto exato da mensagem
                         
                         console.log(`\n[COMANDO] "${foundCommand.name}" executado. Enviando reposta para: ${targetJid}`);
                         await foundCommand.execute(sock, targetJid, envConfig, msg);

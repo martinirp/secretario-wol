@@ -22,11 +22,11 @@ async function waitForPcToTurnOn(ipAddress) {
 module.exports = {
     name: 'ligar pc',
     description: 'Liga o computador via Wake On LAN',
-    execute: async (sock, sender, env) => {
+    execute: async (sock, sender, env, msg) => {
         console.log(`[COMANDO] Ligar PC recebido.`);
         
         try {
-            await sock.sendMessage(sender, { text: '🔄 Acabei de enviar o sinal pra ligar seu pc, aguarde um momento!' });
+            await sock.sendMessage(sender, { text: '🔄 Acabei de enviar o sinal pra ligar seu pc, aguarde um momento!' }, { quoted: msg });
         } catch (e) {
             console.error('Erro ao enviar mensagem inicial:', e);
         }
@@ -34,7 +34,7 @@ module.exports = {
         wol.wake(env.MAC_ADDRESS, { address: env.BROADCAST_ADDRESS }, async (error) => {
             if (error) {
                 console.error('Erro ao enviar o pacote WoL:', error);
-                await sock.sendMessage(sender, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' });
+                await sock.sendMessage(sender, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' }, { quoted: msg });
             } else {
                 console.log(`Sinal enviado. Aguardando o PC (${env.PC_IP}) ficar online...`);
                 const isOnline = await waitForPcToTurnOn(env.PC_IP);
@@ -42,10 +42,10 @@ module.exports = {
                 try {
                     if (isOnline) {
                         console.log('O PC está online!');
-                        await sock.sendMessage(sender, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' });
+                        await sock.sendMessage(sender, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' }, { quoted: msg });
                     } else {
                         console.log('O PC não respondeu após 2 minutos.');
-                        await sock.sendMessage(sender, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida.' });
+                        await sock.sendMessage(sender, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida.' }, { quoted: msg });
                     }
                 } catch (e) {
                     console.error('Erro ao enviar resposta final:', e);
