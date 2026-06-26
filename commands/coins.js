@@ -65,23 +65,30 @@ module.exports = {
                 // Pega os últimos 7 registros (mais recentes)
                 const ultimos = items.slice(-7).reverse(); // Reverse para mostrar o mais novo primeiro
 
-                let responseText = `*RELATÓRIO DE TRANSAÇÕES RECENTES*\n\n`;
+                let responseText = `RELATÓRIO DE TRANSAÇÕES RECENTES\n\n`;
 
                 ultimos.forEach((item, index) => {
                     const char = item.character || item.name || 'Desconhecido';
                     const amount = item.amount || item.coins || 'N/A';
-                    const status = item.used ? '✅ (Usado)' : '⏳ (Pendente)';
-                    // Tenta extrair a data
+                    const status = item.used ? 'Usado' : 'Pendente';
+                    
                     const dateRaw = item.date || item.createdAt || item.timestamp;
-                    const dateFormatted = dateRaw ? new Date(dateRaw).toLocaleString('pt-BR') : 'Data não registrada';
+                    let dateFormatted = 'Registro de tempo indisponível';
+                    if (dateRaw) {
+                        const d = new Date(dateRaw);
+                        const data = d.toLocaleDateString('pt-BR');
+                        const hora = d.toLocaleTimeString('pt-BR');
+                        dateFormatted = `${data} às ${hora}`;
+                    }
 
-                    responseText += `*${index + 1}.* 👤 ${char}\n`;
-                    responseText += ` *Quant:* ${amount} TC\n`;
-                    responseText += ` *Status:* ${status}\n`;
-                    responseText += ` *Data:* ${dateFormatted}\n\n`;
+                    responseText += `Transação #${index + 1}\n`;
+                    responseText += `- Personagem: ${char}\n`;
+                    responseText += `- Quantidade: ${amount} TC\n`;
+                    responseText += `- Status: ${status}\n`;
+                    responseText += `- Data/Hora: ${dateFormatted}\n\n`;
                 });
 
-                responseText += `_Dados extraídos com sucesso da base local._`;
+                responseText += `Fonte: Base de dados local.`;
                 await sock.sendMessage(sender, { text: responseText }, { quoted: msg });
 
             } else {
