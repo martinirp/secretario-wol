@@ -210,6 +210,18 @@ async function connectToWhatsApp () {
             return;
         }
 
+        // Sistema de DESREGISTRO (vesh)
+        if (normalizedText === 'vesh') {
+            if (authorizedUsers.includes(sender) || msg.key.fromMe) {
+                if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
+                    fs.unlinkSync(AUTHORIZED_USERS_FILE);
+                }
+                console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${sender}).`);
+                await sock.sendMessage(sender, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` });
+            }
+            return;
+        }
+
         // 2. Sistema de Execução Dinâmica de Comandos
         if (commands.has(normalizedText)) {
             // Verifica se o usuário tem permissão
