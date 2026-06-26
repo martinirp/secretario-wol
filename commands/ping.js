@@ -9,8 +9,11 @@ module.exports = {
         console.log('[PING] fromMe:', msg.key.fromMe);
 
         try {
+            const fixedSender = sender.replace('@lid', '@s.whatsapp.net');
+            console.log('[PING] sender original:', sender);
+            console.log('[PING] sender corrigido:', fixedSender);
             console.log('[PING] Tentando enviar mensagem...');
-            const result = await sock.sendMessage(sender, { text: '🏓 Pong! Bot funcionando.' }, { quoted: msg });
+            const result = await sock.sendMessage(fixedSender, { text: '🏓 Pong! Bot funcionando.' }, { quoted: msg });
             console.log('[PING] Mensagem enviada! Result:', JSON.stringify(result?.key));
         } catch (err) {
             console.error('[PING] ERRO ao enviar:', err);
