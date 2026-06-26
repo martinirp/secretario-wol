@@ -240,9 +240,8 @@ async function connectToWhatsApp () {
                 // Verifica se o usuário tem permissão
                 if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                     try {
-                        // Para grupos, responde no grupo. Para DM, precisamos normalizar o JID (remover o :12) senão o Baileys não envia
-                        let targetJid = isGroup ? chatJid : normalizedSenderUser;
-                        
+                        // Usa o chatJid bruto (exatamente onde a mensagem chegou) igual ao BossBot
+                        let targetJid = chatJid;
                         // FIX PARA SELF-BOT: Se a mensagem foi mandada por você mesmo no seu próprio chat ("Você")
                         if (msg.key.fromMe && !isGroup) {
                             targetJid = jidNormalizedUser(sock.user.id);
