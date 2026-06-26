@@ -1,20 +1,19 @@
-const ping = require('ping');
-
 module.exports = {
     name: 'ping',
-    description: 'Verifica se o PC está online na rede',
+    description: 'Testa se o bot consegue enviar mensagens',
     execute: async (sock, sender, env, msg) => {
-        console.log(`[COMANDO] Ping recebido de ${sender}.`);
-        await sock.sendMessage(sender, { text: '📡 Verificando o sinal da rede...' }, { quoted: msg });
+        console.log('[PING] Comando ping recebido');
+        console.log('[PING] sock.user:', JSON.stringify(sock.user));
+        console.log('[PING] sender:', sender);
+        console.log('[PING] chatJid:', msg.key.remoteJid);
+        console.log('[PING] fromMe:', msg.key.fromMe);
 
-        const result = await ping.promise.probe(env.PC_IP, { timeout: 2 });
-        
-        if (result.alive) {
-            console.log(`O PC (${env.PC_IP}) está ONLINE.`);
-            await sock.sendMessage(sender, { text: `🟢 **O PC está ONLINE!**\nO computador respondeu aos sinais e já está ligado e conectado na rede local (${env.PC_IP}).` }, { quoted: msg });
-        } else {
-            console.log(`O PC (${env.PC_IP}) está OFFLINE.`);
-            await sock.sendMessage(sender, { text: `🔴 **O PC está OFFLINE!**\nNão recebi resposta do seu computador. Ele provavelmente está desligado ou desconectado da rede.` }, { quoted: msg });
+        try {
+            console.log('[PING] Tentando enviar mensagem...');
+            const result = await sock.sendMessage(sender, { text: '🏓 Pong! Bot funcionando.' }, { quoted: msg });
+            console.log('[PING] Mensagem enviada! Result:', JSON.stringify(result?.key));
+        } catch (err) {
+            console.error('[PING] ERRO ao enviar:', err);
         }
     }
 };
