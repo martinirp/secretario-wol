@@ -9,7 +9,7 @@ require('dotenv').config();
 const AUTHORIZED_USERS_FILE = 'authorized_users.json';
 const COMMANDS_DIR = path.join(__dirname, 'commands');
 
-// Carrega os comandos do diretório dinamicamente
+// --- 1. Carregamento Dinâmico de Comandos ---
 const commands = new Map();
 if (fs.existsSync(COMMANDS_DIR)) {
     const commandFiles = fs.readdirSync(COMMANDS_DIR).filter(file => file.endsWith('.js'));
@@ -21,28 +21,18 @@ if (fs.existsSync(COMMANDS_DIR)) {
     }
 }
 
-function askQuestion(query) {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-    });
-    return new Promise(resolve => rl.question(query, ans => {
-        rl.close();
-        resolve(ans);
-    }));
-}
-
+// --- 2. Utils de Autenticação de Usuários ---
 function loadAuthorizedUsers() {
-    if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
-        const data = fs.readFileSync(AUTHORIZED_USERS_FILE);
-        return JSON.parse(data);
+    if (!fs.existsSync(AUTHORIZED_USERS_FILE)) return [];
+    try {
+        return JSON.parse(fs.readFileSync(AUTHORIZED_USERS_FILE));
+    } catch {
+        return [];
     }
-    return [];
 }
 
 function getAuthorizedJids() {
-    const users = loadAuthorizedUsers();
-    return users.map(u => typeof u === 'string' ? u : u.jid);
+    return loadAuthorizedUsers().map(u => typeof u === 'string' ? u : u.jid);
 }
 
 function saveAuthorizedUser(senderId, senderName) {
@@ -56,41 +46,36 @@ function saveAuthorizedUser(senderId, senderName) {
     return false;
 }
 
-async function setupEnv() {
-    let mac = process.env.MAC_ADDRESS;
-    let ip = process.env.PC_IP;
-    let secret = process.env.SECRET_LINK_COMMAND;
-    let broadcast = process.env.BROADCAST_ADDRESS;
+function askQuestion(query) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise(resolve => rl.question(query, ans => { rl.close(); resolve(ans); }));
+}
 
-    if (!mac || !ip || !secret) {
+// --- 3. Configuração Inicial ---
+async function setupEnv() {
+    let { MAC_ADDRESS, PC_IP, SECRET_LINK_COMMAND, BROADCAST_ADDRESS } = process.env;
+
+    if (!MAC_ADDRESS || !PC_IP || !SECRET_LINK_COMMAND) {
         console.log("\n=============================================");
         console.log("   PRIMEIRA EXECUÇÃO - CONFIGURAÇÃO INICIAL  ");
         console.log("=============================================\n");
         
-        if (!mac) {
-            mac = await askQuestion("1. Digite o MAC Address do PC que será ligado (Ex: 00:1A:2B:3C:4D:5E):\n> ");
-        }
-        if (!ip) {
-            ip = await askQuestion("\n2. Digite o IP local do PC para sabermos quando ele ligar (Ex: 192.168.0.100):\n> ");
-        }
-        if (!secret) {
-            secret = await askQuestion("\n3. Escolha uma FRASE SECRETA para registrar seu celular (Ex: Registrar Chefe 123):\n> ");
-        }
+        MAC_ADDRESS = MAC_ADDRESS || await askQuestion("1. Digite o MAC Address do PC que será ligado (Ex: 00:1A:2B:3C:4D:5E):\n> ");
+        PC_IP = PC_IP || await askQuestion("\n2. Digite o IP local do PC para sabermos quando ele ligar (Ex: 192.168.0.100):\n> ");
+        SECRET_LINK_COMMAND = SECRET_LINK_COMMAND || await askQuestion("\n3. Escolha uma FRASE SECRETA para registrar seu celular (Ex: Registrar Chefe 123):\n> ");
         
-        const envContent = `MAC_ADDRESS=${mac}\nPC_IP=${ip}\nSECRET_LINK_COMMAND=${secret}\nBROADCAST_ADDRESS=255.255.255.255\n`;
-        fs.writeFileSync('.env', envContent);
+        fs.writeFileSync('.env', `MAC_ADDRESS=${MAC_ADDRESS}\nPC_IP=${PC_IP}\nSECRET_LINK_COMMAND=${SECRET_LINK_COMMAND}\nBROADCAST_ADDRESS=255.255.255.255\n`);
         
         console.log("\n✅ Configurações salvas no arquivo '.env' com sucesso!");
-        console.log("=============================================\n");
-        
-        process.env.MAC_ADDRESS = mac;
-        process.env.PC_IP = ip;
-        process.env.SECRET_LINK_COMMAND = secret;
+        process.env.MAC_ADDRESS = MAC_ADDRESS;
+        process.env.PC_IP = PC_IP;
+        process.env.SECRET_LINK_COMMAND = SECRET_LINK_COMMAND;
         process.env.BROADCAST_ADDRESS = '255.255.255.255';
     }
 }
 
-async function connectToWhatsApp () {
+// --- 4. Conexão Principal ---
+async function connectToWhatsApp() {
     await setupEnv();
 
     const envConfig = {
@@ -99,7 +84,7 @@ async function connectToWhatsApp () {
         BROADCAST_ADDRESS: process.env.BROADCAST_ADDRESS || '255.255.255.255'
     };
 
-    const SECRET_LINK_COMMAND = process.env.SECRET_LINK_COMMAND.toLowerCase().trim();
+    const SECRET_COMMAND = process.env.SECRET_LINK_COMMAND.toLowerCase().trim();
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
@@ -112,6 +97,8 @@ async function connectToWhatsApp () {
         syncFullHistory: false,
         printQRInTerminal: false
     });
+
+    sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -129,20 +116,15 @@ async function connectToWhatsApp () {
             if (shouldReconnect) {
                 setTimeout(connectToWhatsApp, 3000);
             } else {
-                console.log('\n[!] Você foi deslogado. Apagando a pasta "auth_info_baileys" automaticamente e reiniciando...');
-                try {
-                    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
-                } catch (err) {
-                    console.error('Erro ao apagar pasta:', err);
-                }
+                console.log('\n[!] Você foi deslogado. Apagando "auth_info_baileys" e reiniciando...');
+                try { fs.rmSync('auth_info_baileys', { recursive: true, force: true }); } catch (e) {}
                 setTimeout(connectToWhatsApp, 3000);
             }
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
             console.log(`[!] Comandos carregados: ${Array.from(commands.keys()).join(', ')}`);
             
-            const authorizedUsers = getAuthorizedJids();
-            if (authorizedUsers.length > 0) {
+            if (getAuthorizedJids().length > 0) {
                 console.log(`[!] Bot já possui um dono registrado. Tudo pronto!\n`);
             } else {
                 console.log(`[!] Para registrar o celular mestre, mande: "${process.env.SECRET_LINK_COMMAND}"\n`);
@@ -150,117 +132,84 @@ async function connectToWhatsApp () {
         }
     });
 
-    sock.ev.on('creds.update', saveCreds);
-
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        console.log(`[DEBUG] EVENTO messages.upsert | tipo: ${type} | msgs: ${messages.length}`);
-        
-        if (type !== 'notify') {
-            return; // Evita processar mensagens antigas do histórico
-        }
+        if (type !== 'notify') return;
 
         for (const msg of messages) {
             if (!msg.message) continue;
 
-            // Copiando do BossBot: ID exata e extração de dados
             const remoteJid = msg.key.remoteJid;
             if (!remoteJid || remoteJid === 'status@broadcast') continue;
 
+            // Extração limpa de dados
             const isGroup = remoteJid.endsWith('@g.us');
-            const senderJid = jidNormalizedUser(msg.key.participant || remoteJid);
-            const senderPhone = senderJid.split('@')[0];
+            const participant = msg.key.participant || remoteJid;
+            const senderJid = jidNormalizedUser(participant);
             const senderName = msg.pushName || '';
-            const normalizedSenderUser = senderJid;
-            const chatJid = remoteJid;
 
-            // Extração de texto idêntica ao BossBot
+            // Texto da mensagem
             const text = msg.message.conversation || 
                          msg.message.extendedTextMessage?.text || 
                          msg.message.ephemeralMessage?.message?.conversation ||
                          msg.message.ephemeralMessage?.message?.extendedTextMessage?.text ||
                          msg.message.imageMessage?.caption || 
-                         msg.message.videoMessage?.caption || 
-                         '';
+                         msg.message.videoMessage?.caption || '';
 
             if (!text) continue;
             
-            // Remover espaços duplicados e forçar minúscula
-            let normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
-
+            const normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
             const authorizedUsers = getAuthorizedJids();
             
-            // Ignora silenciosamente mensagens de outras pessoas caso já exista um dono cadastrado
-            if (authorizedUsers.length > 0 && !authorizedUsers.includes(normalizedSenderUser) && !msg.key.fromMe) {
+            // Segurança: Ignora mensagens de não-donos (exceto o próprio bot enviando do chat do dono)
+            if (authorizedUsers.length > 0 && !authorizedUsers.includes(senderJid) && !msg.key.fromMe) {
                 continue;
             }
 
-            console.log(`\n[DEBUG] Mensagem recebida: "${text}" | Comando: "${normalizedText}" | De: ${normalizedSenderUser} | Chat: ${chatJid}`);
-
-            // 1. Sistema de Registro Secreto
-            if (normalizedText === SECRET_LINK_COMMAND) {
-                if (authorizedUsers.includes(normalizedSenderUser)) {
-                    await sock.sendMessage(chatJid, { text: '⚠️ Este aparelho já estava autorizado. Pode mandar os comandos normalmente!' }, { quoted: msg });
+            // Sistema de Registro
+            if (normalizedText === SECRET_COMMAND) {
+                if (authorizedUsers.includes(senderJid)) {
+                    await sock.sendMessage(remoteJid, { text: '⚠️ Este aparelho já estava autorizado.' });
                     continue;
                 }
                 if (authorizedUsers.length >= 1) {
-                    console.log(`[ALERTA DE SEGURANÇA] Aparelho bloqueado tentando se registrar: ${normalizedSenderUser}`);
-                    continue; // Limite de 1 usuário
+                    console.log(`[BLOQUEIO] Tentativa de registro por número não autorizado: ${senderJid}`);
+                    continue; // Limite de 1 usuário (dono)
                 }
 
-                if (saveAuthorizedUser(normalizedSenderUser, senderName)) {
-                    console.log(`[SUCESSO] Dono registrado: ${normalizedSenderUser} (${senderName}). Sistema TRANCADO.`);
-                    await sock.sendMessage(chatJid, { text: `✅ Seu aparelho foi reconhecido como o ÚNICO dono do sistema!\n\nNenhum outro celular poderá se registrar.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` }, { quoted: msg });
+                if (saveAuthorizedUser(senderJid, senderName)) {
+                    console.log(`[SUCESSO] Dono registrado: ${senderJid}`);
+                    await sock.sendMessage(remoteJid, { text: `✅ Aparelho reconhecido! Sistema TRANCADO.\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
                 }
                 continue;
             }
 
-            // Sistema de DESREGISTRO (vesh)
+            // Sistema de Desregistro (vesh)
             if (normalizedText === 'vesh') {
-                if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
-                    if (fs.existsSync(AUTHORIZED_USERS_FILE)) {
-                        fs.unlinkSync(AUTHORIZED_USERS_FILE);
-                    }
-                    console.log(`[SUCESSO] Sistema DESBLOQUEADO (desregistrado por ${normalizedSenderUser}).`);
-                    await sock.sendMessage(chatJid, { text: `🔓 Sistema DESBLOQUEADO!\n\nTodos os registros foram apagados. O bot está livre para um novo celular se registrar com a palavra-chave (vish).` }, { quoted: msg });
+                if (authorizedUsers.includes(senderJid) || msg.key.fromMe) {
+                    if (fs.existsSync(AUTHORIZED_USERS_FILE)) fs.unlinkSync(AUTHORIZED_USERS_FILE);
+                    console.log(`[SUCESSO] Sistema DESBLOQUEADO.`);
+                    await sock.sendMessage(remoteJid, { text: `🔓 Sistema DESBLOQUEADO! Todos os registros foram apagados.` });
                 }
                 continue;
             }
 
-            // 2. Sistema de Execução Dinâmica de Comandos
-            let foundCommand = null;
-            // Busca manual no Map para ser 100% insensível a maiúsculas, minúsculas e espaços extras
-            for (const [key, cmd] of commands.entries()) {
-                if (key.toLowerCase().trim() === normalizedText.toLowerCase().trim()) {
-                    foundCommand = cmd;
-                    break;
-                }
-            }
+            // Execução de Comandos
+            let foundCommand = Array.from(commands.values()).find(cmd => cmd.name.toLowerCase() === normalizedText);
 
             if (foundCommand) {
-                // Verifica se o usuário tem permissão
-                if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
+                if (authorizedUsers.includes(senderJid) || msg.key.fromMe) {
                     try {
-                        // Usa o chatJid bruto (exatamente onde a mensagem chegou) igual ao BossBot
-                        let targetJid = chatJid;
-                        // FIX PARA SELF-BOT: Se a mensagem foi mandada por você mesmo no seu próprio chat ("Você")
+                        // FIX SELF-BOT: Se enviou pra si mesmo, a resposta deve ir para o ID logado
+                        let targetJid = remoteJid;
                         if (msg.key.fromMe && !isGroup) {
                             targetJid = jidNormalizedUser(sock.user.id);
                         }
-
-                        console.log(`\n[DEBUG TARGET JID] remoteJid: ${chatJid} | normalizedSender: ${normalizedSenderUser} | sock.user.id: ${sock.user.id} | ENVIANDO RESPOSTA PARA: ${targetJid}\n`);
-
-                        // Passa a msg original como quarto argumento para o comando poder usar quote
+                        
+                        console.log(`\n[COMANDO] "${foundCommand.name}" executado. Enviando reposta para: ${targetJid}`);
                         await foundCommand.execute(sock, targetJid, envConfig, msg);
                     } catch (error) {
-                        console.error(`Erro ao executar comando ${foundCommand.name}:`, error);
+                        console.error(`Erro ao executar ${foundCommand.name}:`, error);
                     }
-                } else {
-                    console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${normalizedSenderUser}`);
-                }
-            } else {
-                // Se o usuário mandou algo que parece um comando e está registrado, avisamos
-                if ((authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) && !normalizedText.includes(' ')) {
-                    console.log(`[DEBUG] Comando não encontrado: "${normalizedText}"`);
                 }
             }
         }
