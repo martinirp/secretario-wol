@@ -242,7 +242,6 @@ async function connectToWhatsApp () {
                     try {
                         // Para grupos, responde no grupo. Para DM, precisamos normalizar o JID (remover o :12) senão o Baileys não envia
                         let targetJid = isGroup ? chatJid : normalizedSenderUser;
-                        targetJid = targetJid.replace('@lid', '@s.whatsapp.net');
                         
                         // FIX PARA SELF-BOT: Se a mensagem foi mandada por você mesmo no seu próprio chat ("Você")
                         if (msg.key.fromMe && !isGroup) {
