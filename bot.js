@@ -223,6 +223,12 @@ async function connectToWhatsApp () {
             } else {
                 console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${sender}`);
             }
+        } else {
+            // Se o usuário mandou só uma palavra (possível comando digitado errado) e está registrado, avisamos
+            if ((authorizedUsers.includes(sender) || msg.key.fromMe) && !normalizedText.includes(' ')) {
+                console.log(`[DEBUG] Comando não encontrado no Map: "${normalizedText}"`);
+                await sock.sendMessage(sender, { text: `❓ Comando não encontrado: *${normalizedText}*\n\nComandos disponíveis: *${Array.from(commands.keys()).join('*, *')}*` });
+            }
         }
     });
 }
