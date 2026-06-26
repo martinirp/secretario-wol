@@ -236,7 +236,8 @@ async function connectToWhatsApp () {
                 // Verifica se o usuário tem permissão
                 if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
                     try {
-                        const targetJid = chatJid.endsWith('@g.us') ? chatJid : jidNormalizedUser(chatJid);
+                        // Usa o remoteJid exato de onde a mensagem veio, sem nenhuma transformação
+                        const targetJid = msg.key.remoteJid;
                         // Passa a msg original como quarto argumento para o comando poder usar quote
                         await foundCommand.execute(sock, targetJid, envConfig, msg);
                     } catch (error) {
