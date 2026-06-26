@@ -223,16 +223,24 @@ async function connectToWhatsApp () {
             }
 
             // 2. Sistema de Execução Dinâmica de Comandos
-            if (commands.has(normalizedText)) {
+            let foundCommand = null;
+            // Busca manual no Map para ser 100% insensível a maiúsculas, minúsculas e espaços extras
+            for (const [key, cmd] of commands.entries()) {
+                if (key.toLowerCase().trim() === normalizedText.toLowerCase().trim()) {
+                    foundCommand = cmd;
+                    break;
+                }
+            }
+
+            if (foundCommand) {
                 // Verifica se o usuário tem permissão
                 if (authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) {
-                    const command = commands.get(normalizedText);
                     try {
+                        const targetJid = chatJid.endsWith('@g.us') ? chatJid : jidNormalizedUser(chatJid);
                         // Passa a msg original como quarto argumento para o comando poder usar quote
-                        await command.execute(sock, chatJid, envConfig, msg);
+                        await foundCommand.execute(sock, targetJid, envConfig, msg);
                     } catch (error) {
-                        console.error(`Erro ao executar comando ${command.name}:`, error);
-                        await sock.sendMessage(chatJid, { text: '❌ Ocorreu um erro interno ao executar este comando.' }, { quoted: msg });
+                        console.error(`Erro ao executar comando ${foundCommand.name}:`, error);
                     }
                 } else {
                     console.log(`[BLOQUEADO] Tentativa de usar comando de um usuário não registrado: ${normalizedSenderUser}`);
@@ -240,8 +248,7 @@ async function connectToWhatsApp () {
             } else {
                 // Se o usuário mandou algo que parece um comando e está registrado, avisamos
                 if ((authorizedUsers.includes(normalizedSenderUser) || msg.key.fromMe) && !normalizedText.includes(' ')) {
-                    // Removemos o aviso para não ficar chato caso a pessoa apenas fale uma palavra normal no chat
-                    console.log(`[DEBUG] Comando não encontrado no Map: "${normalizedText}"`);
+                    console.log(`[DEBUG] Comando não encontrado: "${normalizedText}"`);
                 }
             }
         }
