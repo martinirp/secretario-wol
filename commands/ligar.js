@@ -26,7 +26,7 @@ module.exports = {
         console.log(`[COMANDO] Ligar PC recebido.`);
         
         try {
-            await sock.sendMessage(sender, { text: '🔄 Acabei de enviar o sinal pra ligar seu pc, aguarde um momento!' }, { quoted: msg });
+            await sock.sendMessage(sender, { text: 'Processando requisição Wake-on-LAN. Sinal enviado, aguardando resposta da rede.' }, { quoted: msg });
         } catch (e) {
             console.error('Erro ao enviar mensagem inicial:', e);
         }
@@ -34,7 +34,7 @@ module.exports = {
         wol.wake(env.MAC_ADDRESS, { address: env.BROADCAST_ADDRESS }, async (error) => {
             if (error) {
                 console.error('Erro ao enviar o pacote WoL:', error);
-                await sock.sendMessage(sender, { text: '❌ Ocorreu um erro ao enviar o sinal na rede.' }, { quoted: msg });
+                await sock.sendMessage(sender, { text: 'Falha na execução: Erro ao transmitir o pacote Wake-on-LAN na rede.' }, { quoted: msg });
             } else {
                 console.log(`Sinal enviado. Aguardando o PC (${env.PC_IP}) ficar online...`);
                 const isOnline = await waitForPcToTurnOn(env.PC_IP);
@@ -42,10 +42,10 @@ module.exports = {
                 try {
                     if (isOnline) {
                         console.log('O PC está online!');
-                        await sock.sendMessage(sender, { text: '✅ **Pronto!** Seu computador acabou de ligar e já está conectado na rede!' }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: 'Operação concluída com sucesso. O computador encontra-se online e responsivo.' }, { quoted: msg });
                     } else {
                         console.log('O PC não respondeu após 2 minutos.');
-                        await sock.sendMessage(sender, { text: '⚠️ Já se passaram 2 minutos e o PC não deu sinal de vida.' }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: 'Timeout da operação. O computador não respondeu ao ping após 2 minutos.' }, { quoted: msg });
                     }
                 } catch (e) {
                     console.error('Erro ao enviar resposta final:', e);

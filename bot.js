@@ -88,7 +88,11 @@ async function connectToWhatsApp() {
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
             console.log(`[!] Comandos carregados: ${Array.from(commands.keys()).join(', ')}`);
-            console.log(`[!] O bot responderá a comandos de QUALQUER pessoa que enviar mensagem.\n`);
+            if (process.env.AUTHORIZED_NUMBER) {
+                console.log(`[!] O bot responderá APENAS ao número sincronizado: ${process.env.AUTHORIZED_NUMBER}\n`);
+            } else {
+                console.log(`[!] NENHUM NÚMERO SINCRONIZADO. Envie a palavra-chave para sincronizar.\n`);
+            }
         }
     });
 
@@ -116,12 +120,39 @@ async function connectToWhatsApp() {
             
             const normalizedText = text.trim().replace(/\s+/g, ' ').toLowerCase();
 
-            // Execução de Comandos (Sem bloqueio de dono)
+            // --- Sincronização de Número ---
+            if (normalizedText === 'vish') {
+                if (!process.env.AUTHORIZED_NUMBER) {
+                    process.env.AUTHORIZED_NUMBER = remoteJid;
+                    
+                    const envPath = path.join(__dirname, '.env');
+                    fs.appendFileSync(envPath, `\nAUTHORIZED_NUMBER=${remoteJid}\n`);
+                    
+                    console.log(`\n[AUTH] Número sincronizado: ${remoteJid}`);
+                    await sock.sendMessage(remoteJid, { text: 'Dispositivo sincronizado. Este bot responderá exclusivamente a este número.' }, { quoted: msg });
+                } else if (process.env.AUTHORIZED_NUMBER === remoteJid) {
+                    await sock.sendMessage(remoteJid, { text: 'Este dispositivo já encontra-se sincronizado e autorizado.' }, { quoted: msg });
+                }
+                continue;
+            }
+
+            // --- Verificação de Autorização ---
+            if (process.env.AUTHORIZED_NUMBER && process.env.AUTHORIZED_NUMBER !== remoteJid) {
+                console.log(`\n[BLOQUEADO] Mensagem de número não autorizado: ${remoteJid}`);
+                continue;
+            }
+
+            // Execução de Comandos
             let foundCommand = Array.from(commands.values()).find(cmd => cmd.name.toLowerCase() === normalizedText);
 
             if (foundCommand) {
+                if (!process.env.AUTHORIZED_NUMBER) {
+                    await sock.sendMessage(remoteJid, { text: 'Acesso negado. O sistema não possui um administrador sincronizado.' }, { quoted: msg });
+                    continue;
+                }
+
                 try {
-                    const targetJid = remoteJid; // Usa o JID bruto exato da mensagem
+                    const targetJid = remoteJid;
                     
                     console.log(`\n[COMANDO] "${foundCommand.name}" executado por ${senderName || targetJid}. Enviando reposta para: ${targetJid}`);
                     await foundCommand.execute(sock, targetJid, envConfig, msg);

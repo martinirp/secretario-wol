@@ -4,7 +4,7 @@ module.exports = {
     execute: async (sock, sender, env, msg) => {
         console.log('[PING] Comando ping recebido de:', sender);
         try {
-            await sock.sendMessage(sender, { text: '🏓 Pong! O Secretário está online e respondendo.' }, { quoted: msg });
+            await sock.sendMessage(sender, { text: 'Status: Online. Sistema operacional e responsivo.' }, { quoted: msg });
             console.log('[PING] Resposta enviada com sucesso!');
         } catch (err) {
             console.error('[PING] Erro ao enviar resposta:', err);

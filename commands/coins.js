@@ -6,7 +6,7 @@ module.exports = {
     description: 'Checa o histórico de Tibia Coins do Coins API',
     execute: async (sock, sender, env, msg) => {
         console.log(`[COMANDO] Coins solicitado por ${sender}`);
-        await sock.sendMessage(sender, { text: '🔍 Buscando histórico de moedas...' }, { quoted: msg });
+        await sock.sendMessage(sender, { text: 'Processando consulta ao histórico de transações...' }, { quoted: msg });
 
         try {
             // Como o bot e a API rodam no mesmo servidor (Termux/Debian), 
@@ -40,7 +40,7 @@ module.exports = {
                 try {
                     history = JSON.parse(rawData);
                 } catch (e) {
-                    await sock.sendMessage(sender, { text: '⚠️ Erro ao ler o formato do arquivo payments.json.' }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: 'Falha na leitura: O arquivo payments.json está corrompido ou em formato inválido.' }, { quoted: msg });
                     return;
                 }
 
@@ -58,14 +58,14 @@ module.exports = {
                 }
 
                 if (items.length === 0) {
-                    await sock.sendMessage(sender, { text: '🪙 O histórico de moedas está vazio no momento.' }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: 'Consulta concluída: O histórico de transações encontra-se vazio no momento.' }, { quoted: msg });
                     return;
                 }
 
                 // Pega os últimos 7 registros (mais recentes)
                 const ultimos = items.slice(-7).reverse(); // Reverse para mostrar o mais novo primeiro
 
-                let responseText = `🪙 *ÚLTIMAS TRANSAÇÕES* 🪙\n\n`;
+                let responseText = `*RELATÓRIO DE TRANSAÇÕES RECENTES*\n\n`;
 
                 ultimos.forEach((item, index) => {
                     const char = item.character || item.name || 'Desconhecido';
@@ -81,7 +81,7 @@ module.exports = {
                     responseText += ` *Data:* ${dateFormatted}\n\n`;
                 });
 
-                responseText += `_Base de dados lida com sucesso do servidor._`;
+                responseText += `_Dados extraídos com sucesso da base local._`;
                 await sock.sendMessage(sender, { text: responseText }, { quoted: msg });
 
             } else {
@@ -94,17 +94,17 @@ module.exports = {
                     const response = await fetch(`http://127.0.0.1:${port}/api/history`);
                     if (response.ok) {
                         const data = await response.json();
-                        await sock.sendMessage(sender, { text: `🪙 *HISTÓRICO DE COINS*\n\nConectado via API com sucesso! O formato retornado é:\n${JSON.stringify(data).substring(0, 200)}...` }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: `*CONEXÃO VIA API ESTABELECIDA*\n\nDados brutos retornados pelo servidor:\n${JSON.stringify(data).substring(0, 200)}...` }, { quoted: msg });
                     } else {
                         throw new Error('Endpoint /api/history não respondeu corretamente.');
                     }
                 } catch (e) {
-                    await sock.sendMessage(sender, { text: `❌ Não consegui achar o arquivo *payments.json* nas pastas \`mauth/coins-api\` e a API local não respondeu.\nVerifique se o caminho da pasta no servidor está correto em relação ao bot.` }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: `Falha na requisição: Arquivo payments.json não localizado e serviço da API local indisponível.\nVerifique a integridade dos caminhos e processos no servidor.` }, { quoted: msg });
                 }
             }
         } catch (error) {
             console.error('Erro no comando coins:', error);
-            await sock.sendMessage(sender, { text: `❌ Ocorreu um erro fatal ao buscar o histórico:\n_${error.message}_` }, { quoted: msg });
+            await sock.sendMessage(sender, { text: `Erro crítico na execução do comando:\n${error.message}` }, { quoted: msg });
         }
     }
 };
