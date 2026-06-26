@@ -134,13 +134,21 @@ async function connectToWhatsApp () {
         } else if (connection === 'open') {
             console.log('\n[!] Secretário conectado e pronto!');
             console.log(`[!] Comandos carregados: ${Array.from(commands.keys()).join(', ')}`);
-            console.log(`[!] Para registrar o celular mestre, mande: "${process.env.SECRET_LINK_COMMAND}"\n`);
+            
+            const authorizedUsers = loadAuthorizedUsers();
+            if (authorizedUsers.length > 0) {
+                console.log(`[!] Bot já possui um dono registrado. Tudo pronto!\n`);
+            } else {
+                console.log(`[!] Para registrar o celular mestre, mande: "${process.env.SECRET_LINK_COMMAND}"\n`);
+            }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return; // Evita processar mensagens antigas do histórico
+
         const msg = messages[0];
         if (!msg.message) return;
 
@@ -151,9 +159,19 @@ async function connectToWhatsApp () {
             return;
         }
 
+        // Melhorar a extração de texto para diferentes tipos de mensagens
         let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        
         if (!text && msg.message.ephemeralMessage) {
             text = msg.message.ephemeralMessage.message?.conversation || msg.message.ephemeralMessage.message?.extendedTextMessage?.text;
+        }
+
+        if (!text && msg.message.imageMessage) {
+            text = msg.message.imageMessage.caption;
+        }
+
+        if (!text && msg.message.videoMessage) {
+            text = msg.message.videoMessage.caption;
         }
         
         if (!text) return;

@@ -36,7 +36,7 @@ module.exports = {
                 console.log(`[API] Lendo histórico diretamente do arquivo: ${dataPath}`);
                 const rawData = fs.readFileSync(dataPath, 'utf8');
                 let history = [];
-                
+
                 try {
                     history = JSON.parse(rawData);
                 } catch (e) {
@@ -64,9 +64,9 @@ module.exports = {
 
                 // Pega os últimos 7 registros (mais recentes)
                 const ultimos = items.slice(-7).reverse(); // Reverse para mostrar o mais novo primeiro
-                
-                let responseText = `🪙 *ÚLTIMAS TRANSAÇÕES (COINS)* 🪙\n\n`;
-                
+
+                let responseText = `🪙 *ÚLTIMAS TRANSAÇÕES* 🪙\n\n`;
+
                 ultimos.forEach((item, index) => {
                     const char = item.character || item.name || 'Desconhecido';
                     const amount = item.amount || item.coins || 'N/A';
@@ -76,9 +76,9 @@ module.exports = {
                     const dateFormatted = dateRaw ? new Date(dateRaw).toLocaleString('pt-BR') : 'Data não registrada';
 
                     responseText += `*${index + 1}.* 👤 ${char}\n`;
-                    responseText += `💰 *Quant:* ${amount} TC\n`;
-                    responseText += `📌 *Status:* ${status}\n`;
-                    responseText += `📅 *Data:* ${dateFormatted}\n\n`;
+                    responseText += ` *Quant:* ${amount} TC\n`;
+                    responseText += ` *Status:* ${status}\n`;
+                    responseText += ` *Data:* ${dateFormatted}\n\n`;
                 });
 
                 responseText += `_Base de dados lida com sucesso do servidor._`;
@@ -86,10 +86,10 @@ module.exports = {
 
             } else {
                 console.log('[API] Arquivo payments.json não encontrado. Tentando via requisição HTTP...');
-                
+
                 // Se não achar o arquivo físico (por estar em outra pasta), tenta conectar pela API local
                 const port = 5001; // Porta padrão que vimos no M-Auth
-                
+
                 try {
                     const response = await fetch(`http://127.0.0.1:${port}/api/history`);
                     if (response.ok) {
